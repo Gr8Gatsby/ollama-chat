@@ -4,6 +4,48 @@
 
 Technical implementation details, architecture decisions, and development guidelines for Ollama Chat.
 
+## Executive Summary
+
+This specification defines the technical requirements for building Ollama Chat, a local-first AI chat client using Web Components, WebSockets, and SQLite.
+
+### Quick Reference
+
+| Section | Key Topics | Priority |
+|---------|-----------|----------|
+| [DR-1: Web Components](#dr-1-web-components-implementation) | Component architecture, reuse policy, 28 component library | HIGH |
+| [DR-1a: Icon-First UI](#dr-1a-icon-first-ui-pattern) | Lucide icons, tooltips, standard icon mappings | HIGH |
+| [DR-1b: Message Layout](#dr-1b-message-layout-and-content-rendering) | User bubbles vs AI full-width, real-time markdown, collapsible code blocks | HIGH |
+| [DR-2: Semantic HTML](#dr-2-semantic-html5-structure) | Layout tags (header/main/aside/nav/footer) | MEDIUM |
+| [DR-3: Lucide Icons](#dr-3-lucide-icons-integration) | Icon library setup, size variants, accessibility | MEDIUM |
+| [DR-4: Theming System](#dr-4-theming-system) | CSS custom properties, light/dark modes, custom user themes | HIGH |
+| [DR-5: Localization (i18n)](#dr-5-localization-i18n) | Native Intl APIs, locale files, RTL support | HIGH |
+| [DR-6: Docker Environment](#dr-6-docker-development-environment) | 3-container setup (frontend/backend/ollama), Makefile, hot-reload | HIGH |
+| [DR-7: FOUC Prevention](#dr-7-flash-of-unstyled-content-fouc-prevention) | Loading strategy to prevent unstyled content flash | LOW |
+| [DR-8: WebSocket Server](#dr-8-backend-websocket-server) | Node.js server, message protocol, Ollama integration | HIGH |
+| [DR-9: Database Schema](#dr-9-database-schema) | SQLite schema for conversations, messages, tokens, settings | HIGH |
+| [DR-10: WebSocket Client](#dr-10-websocket-client-implementation) | Reconnection, exponential backoff, message queuing | HIGH |
+| [DR-11: Streaming Response](#dr-11-streaming-response-handling) | Progressive markdown rendering, code block detection | HIGH |
+| [DR-12: Error Handling](#dr-12-error-handling-and-user-feedback) | SARIF format, error catalog, user-friendly messages | MEDIUM |
+| [DR-13: State Management](#dr-13-component-communication-and-state-management) | Singleton pattern, event-based communication | HIGH |
+| [DR-14: Security](#dr-14-security-requirements) | XSS prevention, CSP headers, input validation | HIGH |
+| [DR-15: Accessibility](#dr-15-accessibility-requirements) | WCAG 2.1 AA compliance, keyboard nav, screen readers | HIGH |
+| [DR-16: Performance](#dr-16-performance-guidelines) | Virtual scrolling (25 msgs), bundle size <200KB, Web Vitals | MEDIUM |
+| [DR-17: Testing Strategy](#dr-17-testing-strategy) | Vitest, Playwright, 80% coverage target | MEDIUM |
+| [DR-18: API Contracts](#dr-18-backend-api-message-contracts) | 19 WebSocket message types, request/response patterns | HIGH |
+
+### Core Design Principles
+
+1. **Web Components Only**: No React, Vue, Angular, or other frameworks
+2. **Icon-First UI**: Use Lucide icons with tooltips instead of text labels
+3. **Compact by Default**: Tight spacing (2px/4px/8px) for information density
+4. **Visual Consistency**: Reuse existing components, justify new ones
+5. **RTL-First**: Support Arabic/Hebrew with logical CSS properties
+6. **Streaming-Native**: Real-time markdown rendering during LLM streaming
+7. **Local-First**: SQLite + WebSockets, no cloud dependencies
+8. **Accessible**: WCAG 2.1 AA compliance from day one
+9. **Secure**: XSS prevention, CSP headers, input validation
+10. **Performance**: <200KB bundle, virtual scrolling, lazy loading
+
 ## Technology Stack
 
 ### Frontend
