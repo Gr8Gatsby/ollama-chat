@@ -2995,3 +2995,39 @@ border-end-end-radius      (NOT border-bottom-right-radius)
 5. Add translated strings to locale files
 6. Test in Docker container
 7. Create PR to merge back to `main`
+
+---
+
+## Implemented Features
+
+This section tracks completed feature implementations. Each feature has detailed documentation in `docs/features/`.
+
+### ✅ F-00: Basic Project Setup
+**Status**: Complete  
+**Completed**: 2026-01-02  
+**Documentation**: [docs/features/00-basic-project-setup.md](features/00-basic-project-setup.md)
+
+**Summary**:
+- Docker Compose with 3 services (frontend nginx, backend Node.js, Ollama)
+- WebSocket server with SQLite database initialization
+- Complete project structure (src/frontend, src/backend, src/shared, build/)
+- Makefile with 25+ development commands
+- All infrastructure validated and working
+
+**Success Criteria**: 7/7 complete
+- Docker configuration, Makefile, WebSocket server, database schema, health checks, setup process
+
+---
+
+### Feature Documentation Template
+
+When implementing new features, create a feature document in `docs/features/` following this structure:
+
+1. **Metadata**: Feature ID, Status, Dates, Dependencies
+2. **Target Requirements**: Link to FR/DR requirements from specification.md and development.md
+3. **Success Criteria**: Checkboxes for acceptance criteria
+4. **Implementation Plan**: Phases and steps
+5. **Implementation Notes**: Technical decisions and considerations
+6. **Change Log**: Dated entries by AI agent with work summary
+
+See `docs/features/00-basic-project-setup.md` for a complete example.
