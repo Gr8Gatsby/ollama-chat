@@ -1,4 +1,4 @@
-version: '3.8'
+version: "3.8"
 
 services:
   backend:
@@ -6,9 +6,10 @@ services:
       NODE_ENV: development
     command: npm run dev
     volumes:
-      - ./server:/app
+      - ./src/backend:/app/src
+      - ./build/backend:/app
       - /app/node_modules
 
   frontend:
     volumes:
-      - ./src:/usr/share/nginx/html
+      - ./build/frontend:/usr/share/nginx/html

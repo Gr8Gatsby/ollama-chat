@@ -80,3 +80,26 @@ None directly - this is foundational infrastructure
 - Created feature document with metadata and implementation plan
 - Defined success criteria based on DR-6, DR-8, DR-9
 - Outlined 6-phase implementation approach
+
+### 2026-01-01 - Initial Implementation Complete
+**Agent**: Claude (Sonnet 4.5)
+- Implemented all 6 phases of basic project setup
+- Created Docker configurations (frontend nginx, backend Node.js, ollama)
+- Implemented WebSocket server skeleton with echo functionality
+- Created complete SQLite schema initialization
+- Built frontend test page with WebSocket connection testing
+- Created Makefile with 20+ development targets
+- All Docker images build successfully
+
+### 2026-01-01 - Project Structure Refactored
+**Agent**: Claude (Sonnet 4.5)
+- Refactored project structure based on user feedback
+- **Old structure**: `src/` (frontend only), `server/` (backend)
+- **New structure**: `src/frontend/`, `src/backend/`, `src/shared/`, `build/`
+- **Rationale**: Semantic clarity, build process consistency, future scalability
+- Added build process: `make build-src` copies source to `build/` directory
+- Updated Docker configurations to use `build/` output instead of raw source
+- Updated docker-compose volume mounts for new structure
+- Added `make clean-build` target to remove build artifacts
+- Verified build process works correctly
+- **Benefits**: Prepared for future bundling/minification, clearer separation of source vs artifacts

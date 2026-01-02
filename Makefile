@@ -1,4 +1,4 @@
-.PHONY: help dev start stop restart logs logs-backend logs-frontend logs-ollama clean build pull-model list-models setup health
+.PHONY: help dev start stop restart logs logs-backend logs-frontend logs-ollama clean build build-src build-frontend build-backend pull-model list-models setup health
 
 # Default model to pull
 DEFAULT_MODEL ?= llama2
@@ -8,7 +8,24 @@ help: ## Show this help message
 	@echo ""
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
-dev: ## Start development environment
+build-src: ## Build source code (frontend + backend)
+	@echo "Building source code..."
+	@make build-frontend
+	@make build-backend
+
+build-frontend: ## Build frontend from src/frontend/ to build/frontend/
+	@echo "Building frontend..."
+	@mkdir -p build/frontend
+	@cp -r src/frontend/* build/frontend/
+	@echo "Frontend built successfully"
+
+build-backend: ## Build backend from src/backend/ to build/backend/
+	@echo "Building backend..."
+	@mkdir -p build/backend
+	@cp -r src/backend/* build/backend/
+	@echo "Backend built successfully"
+
+dev: build-src ## Start development environment
 	@echo "Starting development environment..."
 	docker-compose -f docker-compose.yml -f docker-compose.dev.yml up
 
@@ -37,11 +54,15 @@ clean: ## Stop and remove all containers, networks, and volumes
 	docker-compose down -v
 	rm -rf data/*.db data/*.db-shm data/*.db-wal
 
-build: ## Build Docker images
+clean-build: ## Remove build artifacts
+	@echo "Removing build artifacts..."
+	rm -rf build/
+
+build: build-src ## Build Docker images (builds source first)
 	@echo "Building Docker images..."
 	docker-compose build
 
-rebuild: clean build ## Clean and rebuild everything
+rebuild: clean clean-build build ## Clean and rebuild everything
 
 pull-model: ## Pull a model (use MODEL=name to specify, default: llama2)
 	@echo "Pulling model: $(or $(MODEL),$(DEFAULT_MODEL))"
