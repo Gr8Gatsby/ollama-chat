@@ -9,8 +9,8 @@ COPY src/backend/package*.json ./
 # Install dependencies
 RUN npm install --production
 
-# Copy built backend code
-COPY build/backend/ ./
+# Copy backend source code (not build - we need node_modules alongside source)
+COPY src/backend/ ./
 
 # Create data directory
 RUN mkdir -p /data

@@ -22,9 +22,9 @@ services:
       dockerfile: docker/Dockerfile.backend
     container_name: ollama-chat-backend
     ports:
-      - "8080:8080"
+      - "8082:8080"
     volumes:
-      - ./build/backend:/app:ro
+      - ./src/backend:/app:ro
       - ./data:/data
     environment:
       NODE_ENV: production

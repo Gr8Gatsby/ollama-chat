@@ -6,8 +6,7 @@ services:
       NODE_ENV: development
     command: npm run dev
     volumes:
-      - ./src/backend:/app/src
-      - ./build/backend:/app
+      - ./src/backend:/app
       - /app/node_modules
 
   frontend:
