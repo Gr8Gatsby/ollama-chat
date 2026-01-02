@@ -32,6 +32,10 @@ This specification defines the technical requirements for building Ollama Chat, 
 | [DR-16: Performance](#dr-16-performance-guidelines) | Virtual scrolling (25 msgs), bundle size <200KB, Web Vitals | MEDIUM |
 | [DR-17: Testing Strategy](#dr-17-testing-strategy) | Vitest, Playwright, 80% coverage target | MEDIUM |
 | [DR-18: API Contracts](#dr-18-backend-api-message-contracts) | 19 WebSocket message types, request/response patterns | HIGH |
+| [DR-19: File Display](#dr-19-file-display-components) | Project view, file tree, syntax highlighting, streaming display | HIGH |
+| [DR-20: Live Preview](#dr-20-live-preview-system) | Sandboxed iframe, blob URLs, error handling, auto-refresh | HIGH |
+| [DR-21: Project Export](#dr-21-project-export) | ZIP download, directory structure, metadata, size limits | MEDIUM |
+| [DR-22: LLM Prompts](#dr-22-llm-prompt-engineering-and-guidance) | System prompts, approach verification, file format, placeholder detection | HIGH |
 
 ### Core Design Principles
 
@@ -321,6 +325,11 @@ graph TD
 | `<ollama-settings-panel>` | Experience | Settings dialog with inputs, selects, and theme options |
 | `<ollama-theme-toggle>` | Experience | Light/dark theme switcher (button with icon) |
 | `<ollama-language-selector>` | Experience | Language/locale picker (select with flag icons) |
+| `<ollama-project-view>` | Experience | Project display with metadata, file tree, and download button |
+| `<ollama-file-tree>` | Experience | Hierarchical file structure with collapsible directories |
+| `<ollama-file-display>` | Experience | File content with syntax highlighting, streaming support, and copy button |
+| `<ollama-preview-panel>` | Experience | Sandboxed iframe preview with controls and error display |
+| `<ollama-export-button>` | Leaf | Project download button with loading state and file size |
 
 **Component Type Definitions**:
 - **Leaf**: Single-purpose component with no child components (button, icon, input, badge)
@@ -1241,6 +1250,31 @@ CREATE TABLE conversations (
   metadata TEXT                      -- JSON: theme, settings, etc.
 );
 
+-- Projects (for FR-7)
+CREATE TABLE projects (
+  id TEXT PRIMARY KEY,               -- UUID
+  conversation_id TEXT NOT NULL,     -- FK to conversations
+  name TEXT NOT NULL,                -- Project name
+  description TEXT,                  -- Optional project description
+  created_at INTEGER NOT NULL,       -- Unix timestamp (ms)
+  updated_at INTEGER NOT NULL,       -- Unix timestamp (ms)
+  FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+);
+
+-- Project Files (for FR-7, FR-8)
+CREATE TABLE project_files (
+  id TEXT PRIMARY KEY,               -- UUID
+  project_id TEXT NOT NULL,          -- FK to projects
+  path TEXT NOT NULL,                -- File path (e.g., "src/index.html", "styles/main.css")
+  content TEXT NOT NULL,             -- File content
+  language TEXT NOT NULL,            -- File type for syntax highlighting (html, css, js, etc.)
+  size INTEGER NOT NULL,             -- Content size in bytes
+  created_at INTEGER NOT NULL,       -- Unix timestamp (ms)
+  updated_at INTEGER NOT NULL,       -- Unix timestamp (ms)
+  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+  UNIQUE(project_id, path)           -- Each path unique within project
+);
+
 -- Messages
 CREATE TABLE messages (
   id TEXT PRIMARY KEY,               -- UUID
@@ -1249,8 +1283,10 @@ CREATE TABLE messages (
   content TEXT NOT NULL,             -- Message text
   model TEXT,                        -- Model used (for assistant messages)
   images TEXT,                       -- JSON array of base64 images (for user messages)
+  project_id TEXT,                   -- Optional FK to projects (if message generated project)
   created_at INTEGER NOT NULL,       -- Unix timestamp (ms)
-  FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+  FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE,
+  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE SET NULL
 );
 
 -- Token Usage Log (for FR-1)
@@ -1276,9 +1312,12 @@ CREATE TABLE settings (
 
 -- Indexes
 CREATE INDEX idx_messages_conversation ON messages(conversation_id, created_at);
+CREATE INDEX idx_messages_project ON messages(project_id);
 CREATE INDEX idx_tokens_conversation ON token_usage(conversation_id);
 CREATE INDEX idx_tokens_message ON token_usage(message_id);
 CREATE INDEX idx_conversations_updated ON conversations(updated_at DESC);
+CREATE INDEX idx_projects_conversation ON projects(conversation_id);
+CREATE INDEX idx_project_files_project ON project_files(project_id);
 ```
 
 *Database Operations*:
@@ -2344,6 +2383,316 @@ describe('ollama-button', () => {
 - Timestamps MUST be Unix milliseconds
 - Server MUST respond with error for invalid message types
 - Server MUST validate required fields per message type
+
+---
+
+### DR-19: File Display Components
+**Requirement**: Display generated files with syntax highlighting and project structure (FR-8).
+
+**Technical Specifications**:
+
+*Components* (`src/components/features/`):
+
+**`<ollama-project-view>`** (Experience Component):
+- Container for displaying entire project
+- Shows project metadata (name, description, file count)
+- Contains file tree and file content area
+- Provides download button for project export
+- Emits events: `file-selected`, `project-download`
+
+**`<ollama-file-tree>`** (Experience Component):
+- Displays hierarchical file structure
+- Supports collapsible directories
+- Highlights selected file
+- Shows file icons based on type (HTML, CSS, JS)
+- Click file to display content
+- Emits event: `file-selected` with file path
+
+**`<ollama-file-display>`** (Experience Component):
+- Displays single file content with syntax highlighting
+- Shows file path as header
+- Shows file metadata (language, size, line count)
+- Provides copy button for file content
+- Uses syntax highlighting library (e.g., Prism.js or Highlight.js)
+- Supports streaming updates (file content appears as generated)
+- Shows loading indicator while file is being generated
+- Emits events: `copy-file`, `file-complete`
+
+*File Tree Structure*:
+```javascript
+// File tree data structure
+{
+  "name": "my-project",
+  "type": "directory",
+  "children": [
+    {
+      "name": "index.html",
+      "type": "file",
+      "path": "index.html",
+      "language": "html",
+      "size": 1234
+    },
+    {
+      "name": "styles",
+      "type": "directory",
+      "children": [
+        {
+          "name": "main.css",
+          "type": "file",
+          "path": "styles/main.css",
+          "language": "css",
+          "size": 567
+        }
+      ]
+    }
+  ]
+}
+```
+
+*Syntax Highlighting*:
+- MUST support: HTML, CSS, JavaScript, JSON, Markdown
+- SHOULD use lightweight library (bundle size consideration)
+- MUST apply theme-aware syntax colors
+- SHOULD use lazy loading for syntax highlighter
+
+*Streaming File Display*:
+- File content MUST render progressively as chunks arrive
+- Syntax highlighting MUST update in real-time
+- Line numbers MUST update as content grows
+- Loading indicator MUST show until file marked complete
+
+*Placeholder Detection* (FR-12):
+- SHOULD scan file content for patterns: `TODO`, `FIXME`, `@placeholder`, `// implement`, `stub`
+- SHOULD display warning if placeholders detected
+- SHOULD provide action to request LLM regenerate without placeholders
+
+---
+
+### DR-20: Live Preview System
+**Requirement**: Provide sandboxed iframe preview of generated web applications (FR-9).
+
+**Technical Specifications**:
+
+*Component* (`src/components/features/`):
+
+**`<ollama-preview-panel>`** (Experience Component):
+- Contains sandboxed iframe for rendering generated apps
+- Shows preview controls (refresh, open in new tab, toggle console)
+- Displays error messages from iframe
+- Handles iframe communication
+- Emits events: `preview-error`, `preview-ready`
+
+*Iframe Sandbox Configuration*:
+```html
+<iframe 
+  sandbox="allow-scripts allow-same-origin allow-forms allow-modals"
+  srcdoc="<!-- Generated HTML -->"
+  title="Project Preview"
+></iframe>
+```
+
+Sandbox restrictions:
+- `allow-scripts`: Required for JavaScript execution
+- `allow-same-origin`: Required for local resource access (CSS, JS modules)
+- `allow-forms`: Allow form interactions
+- `allow-modals`: Allow alerts/confirms (for user testing)
+- NO `allow-top-navigation`: Prevent navigation attacks
+- NO `allow-popups`: Prevent popup spam
+
+*Content Loading Strategy*:
+
+**Option 1: srcdoc attribute** (Recommended for simple projects):
+- Inject complete HTML via `srcdoc` attribute
+- Inline CSS and JS or use data URLs
+- Works for single-file or small projects
+
+**Option 2: Blob URLs** (Recommended for multi-file projects):
+- Create blob URLs for each file (HTML, CSS, JS)
+- Inject base HTML with proper references
+- Better for projects with multiple files and imports
+- Clean up blob URLs when preview destroyed
+
+**Option 3: Service Worker** (Advanced, future enhancement):
+- Register service worker to intercept fetch requests
+- Serve files from in-memory cache
+- Full support for ES modules and relative imports
+
+*Error Handling*:
+- MUST catch and display JavaScript runtime errors from iframe
+- MUST use `window.addEventListener('message', ...)` for iframe communication
+- Preview MUST NOT crash parent page if generated code has errors
+- SHOULD display console output from preview (errors, warnings)
+- SHOULD provide "Reset Preview" button to reload clean state
+
+*Auto-Refresh*:
+- Preview MUST auto-refresh when project files updated
+- SHOULD debounce refresh (wait 500ms after last update)
+- MUST preserve scroll position on refresh if possible
+
+*Preview Console*:
+- SHOULD capture console.log/warn/error from iframe
+- Display in collapsible console panel below preview
+- Use different colors for log levels (info, warn, error)
+
+---
+
+### DR-21: Project Export
+**Requirement**: Allow users to download complete projects as ZIP archives (FR-10).
+
+**Technical Specifications**:
+
+*Export Component* (`src/components/features/`):
+
+**`<ollama-export-button>`** (Leaf Component):
+- Button to trigger project download
+- Shows loading state during archive creation
+- Displays file size before download
+- Emits event: `export-project`
+
+*ZIP Library*:
+- MUST use client-side ZIP library (e.g., JSZip)
+- MUST NOT require server-side processing for export
+- Library MUST support creating directory structure
+- Library SHOULD be lazy-loaded (not in initial bundle)
+
+*Export Process*:
+1. Fetch all project files from database (via WebSocket or local state)
+2. Create ZIP archive with proper directory structure
+3. Add all files to archive preserving paths
+4. Generate ZIP blob
+5. Create download link with appropriate filename
+6. Trigger browser download
+7. Clean up blob URL
+
+*Filename Convention*:
+- Format: `{project-name}_{timestamp}.zip`
+- Example: `todo-app_2026-01-01-143022.zip`
+- MUST sanitize project name (remove special chars, spaces to hyphens)
+- MUST include ISO timestamp for uniqueness
+
+*Archive Structure*:
+```
+project-name/
+├── index.html
+├── styles/
+│   └── main.css
+├── scripts/
+│   └── app.js
+└── README.md (optional metadata)
+```
+
+*Metadata File* (Optional):
+- SHOULD include README.md with:
+  - Project name and description
+  - Generation timestamp
+  - Model used for generation
+  - Conversation ID (for reference)
+
+*Size Limits*:
+- SHOULD warn if archive exceeds 10MB
+- MUST handle archives up to 50MB
+- SHOULD display progress indicator for large archives
+
+*Browser Compatibility*:
+- MUST use modern download API: `<a download>` with blob URL
+- MUST work in Chrome, Firefox, Safari, Edge (latest versions)
+- SHOULD provide fallback message for unsupported browsers
+
+---
+
+### DR-22: LLM Prompt Engineering and Guidance
+**Requirement**: System prompts to ensure approach verification and complete code generation (FR-11, FR-12).
+
+**Technical Specifications**:
+
+*System Prompt Structure*:
+
+System prompts MUST be sent with every LLM request to guide behavior. These are technical requirements for implementation, not the actual prompt text.
+
+**Base System Prompt Requirements**:
+- MUST establish role as helpful software builder
+- MUST emphasize complete implementations (no TODOs)
+- MUST require approach verification before code generation
+- MUST specify output format for file generation
+- SHOULD encourage asking clarifying questions
+
+**Approach Verification Prompt Requirements**:
+- MUST instruct LLM to present detailed plan before coding
+- Plan MUST include: features, file structure, technologies, architecture
+- MUST wait for explicit approval ("yes", "approve", "looks good", etc.)
+- MUST support iteration if user requests changes
+- MUST NOT generate code without approval
+
+**File Generation Prompt Requirements**:
+- MUST specify file format for output (see below)
+- MUST emphasize NO TODO comments or placeholders
+- MUST require fully implemented functions
+- MUST specify that all features in approved plan must be working
+- SHOULD encourage best practices and clean code
+
+*File Output Format*:
+
+LLM MUST generate files using this structured format for parsing:
+
+```
+FILE: path/to/file.html
+LANGUAGE: html
+---
+<!DOCTYPE html>
+<html>
+  <!-- Complete implementation -->
+</html>
+---
+
+FILE: styles/main.css
+LANGUAGE: css
+---
+body {
+  margin: 0;
+  /* Complete styles */
+}
+---
+```
+
+Format requirements:
+- Each file starts with `FILE: {path}`
+- Followed by `LANGUAGE: {type}` (html, css, js, json, md)
+- Separator: `---`
+- File content (complete implementation)
+- Separator: `---`
+- Repeat for each file
+
+*Parsing Strategy*:
+- Backend MUST parse structured format to extract files
+- MUST validate each file has path, language, and content
+- MUST create database entries for each file
+- MUST associate files with project
+- SHOULD validate for placeholder patterns before saving
+
+*Placeholder Detection Patterns*:
+```javascript
+const placeholderPatterns = [
+  /TODO:/i,
+  /FIXME:/i,
+  /@placeholder/i,
+  /\/\/\s*implement/i,
+  /\/\/\s*add\s+.*\s+here/i,
+  /function\s+\w+\s*\([^)]*\)\s*\{\s*\}/,  // Empty function bodies
+  /=>\s*\{\s*\}/,  // Empty arrow functions
+];
+```
+
+If placeholders detected:
+- Backend SHOULD send warning to client
+- Client SHOULD display warning to user
+- User SHOULD have option to: accept anyway OR request regeneration
+- If regeneration requested, send prompt emphasizing complete implementation
+
+*Conversation State Tracking*:
+- Backend MUST track conversation phase: `refining`, `verification_pending`, `approved`, `generating`
+- Phase determines which system prompts to apply
+- Phase prevents code generation before approval
+- Phase stored in conversation metadata
 
 ---
 
