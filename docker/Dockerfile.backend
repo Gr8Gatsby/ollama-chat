@@ -1,0 +1,26 @@
+FROM node:20-alpine
+
+# Set working directory
+WORKDIR /app
+
+# Copy package files
+COPY server/package*.json ./
+
+# Install dependencies
+RUN npm install --production
+
+# Copy server code
+COPY server/ ./
+
+# Create data directory
+RUN mkdir -p /data
+
+# Expose WebSocket port
+EXPOSE 8080
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 --start-period=40s \
+  CMD node -e "require('http').get('http://localhost:8080/health', (r) => { process.exit(r.statusCode === 200 ? 0 : 1); })" || exit 1
+
+# Start server
+CMD ["node", "index.js"]
