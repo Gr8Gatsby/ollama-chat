@@ -1,4 +1,4 @@
-import { BaseComponent } from './base-component.js';
+import { BaseComponent } from "./base-component.js";
 
 /**
  * <ollama-button> - Button component with multiple variants
@@ -20,7 +20,7 @@ import { BaseComponent } from './base-component.js';
  */
 export class OllamaButton extends BaseComponent {
   static get observedAttributes() {
-    return ['variant', 'disabled', 'size'];
+    return ["variant", "disabled", "size", "label", "aria-label"];
   }
 
   constructor() {
@@ -36,19 +36,20 @@ export class OllamaButton extends BaseComponent {
   }
 
   setupEventListeners() {
-    const button = this.shadowRoot.querySelector('button');
-    button.addEventListener('click', (e) => {
-      if (!this.getBooleanAttribute('disabled')) {
-        this.emit('click', { originalEvent: e });
+    const button = this.shadowRoot.querySelector("button");
+    button.addEventListener("click", (e) => {
+      if (!this.getBooleanAttribute("disabled")) {
+        this.emit("click", { originalEvent: e });
       }
     });
   }
 
   render() {
-    const variant = this.getAttribute('variant') || 'primary';
-    const size = this.getAttribute('size') || 'md';
-    const disabled = this.getBooleanAttribute('disabled');
-    const ariaLabel = this.getAttribute('aria-label');
+    const variant = this.getAttribute("variant") || "primary";
+    const size = this.getAttribute("size") || "md";
+    const disabled = this.getBooleanAttribute("disabled");
+    const ariaLabel =
+      this.getAttribute("label") || this.getAttribute("aria-label");
 
     this.shadowRoot.innerHTML = `
       <style>
@@ -87,7 +88,7 @@ export class OllamaButton extends BaseComponent {
         /* Variant: Primary */
         button.primary {
           background: var(--color-accent-primary);
-          color: white;
+          color: var(--color-on-accent, #ffffff);
           padding: var(--spacing-sm) var(--spacing-md);
         }
 
@@ -147,8 +148,8 @@ export class OllamaButton extends BaseComponent {
       </style>
       <button
         class="${variant} ${size}"
-        ${disabled ? 'disabled' : ''}
-        ${ariaLabel ? `aria-label="${ariaLabel}"` : ''}
+        ${disabled ? "disabled" : ""}
+        ${ariaLabel ? `aria-label="${ariaLabel}"` : ""}
       >
         <slot></slot>
       </button>
@@ -156,7 +157,9 @@ export class OllamaButton extends BaseComponent {
 
     // Re-setup event listeners after render
     this.setupEventListeners();
+    const button = this.shadowRoot.querySelector("button");
+    this.applyLocalizationAttributes(button);
   }
 }
 
-customElements.define('ollama-button', OllamaButton);
+customElements.define("ollama-button", OllamaButton);

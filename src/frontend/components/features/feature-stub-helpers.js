@@ -1,4 +1,4 @@
-import { BaseComponent } from '../base/base-component.js';
+import { BaseComponent } from "../base/base-component.js";
 
 /**
  * Base helper class for feature-component stubs.
@@ -8,7 +8,9 @@ export class FeatureStubComponent extends BaseComponent {
   constructor() {
     super();
     if (new.target === FeatureStubComponent) {
-      throw new Error('FeatureStubComponent should not be instantiated directly.');
+      throw new Error(
+        "FeatureStubComponent should not be instantiated directly.",
+      );
     }
   }
 }
@@ -22,19 +24,22 @@ export class FeatureStubComponent extends BaseComponent {
  * @param {string[]} options.dependencies - Base components that this feature relies on
  * @param {string[]} options.responsibilities - Bullet list of responsibilities or TODOs
  */
-export function renderStubPlaceholder(component, { title, description, dependencies = [], responsibilities = [] }) {
+export function renderStubPlaceholder(
+  component,
+  { title, description, dependencies = [], responsibilities = [] },
+) {
   const dependencyMarkup = dependencies.length
-    ? `<p class="placeholder__deps"><strong>Base components:</strong> ${dependencies.join(', ')}</p>`
-    : '';
+    ? `<p class="placeholder__deps"><strong>Base components:</strong> ${dependencies.join(", ")}</p>`
+    : "";
 
   const responsibilitiesMarkup = responsibilities.length
-    ? `<ul class="placeholder__list">${responsibilities.map((item) => `<li>${item}</li>`).join('')}</ul>`
-    : '';
+    ? `<ul class="placeholder__list">${responsibilities.map((item) => `<li>${item}</li>`).join("")}</ul>`
+    : "";
 
   component.shadowRoot.innerHTML = `
     <style>
-      ${component.getResetStyles?.() ?? ''}
-      ${component.getThemeStyles?.() ?? ''}
+      ${component.getResetStyles?.() ?? ""}
+      ${component.getThemeStyles?.() ?? ""}
 
       :host {
         display: block;
@@ -44,7 +49,7 @@ export function renderStubPlaceholder(component, { title, description, dependenc
         border: 1px dashed var(--color-border);
         border-radius: var(--radius-md);
         padding: var(--spacing-md);
-        background: color-mix(in srgb, var(--color-bg-primary) 85%, var(--color-accent-primary) 15%);
+        background: color-mix(in srgb, var(--color-bg-primary) 92%, var(--color-accent-primary) 8%);
         color: var(--color-text-primary);
         font-family: var(--font-family);
         font-size: var(--font-size-sm);
@@ -60,17 +65,14 @@ export function renderStubPlaceholder(component, { title, description, dependenc
         color: var(--color-text-primary);
       }
 
-      .placeholder__desc {
-        color: var(--color-text-secondary);
-      }
-
-      .placeholder__deps strong {
+      .placeholder__desc,
+      .placeholder__deps,
+      .placeholder__list {
         color: var(--color-text-primary);
       }
 
       .placeholder__list {
         padding-inline-start: var(--spacing-lg);
-        color: var(--color-text-secondary);
         display: flex;
         flex-direction: column;
         gap: calc(var(--spacing-xs) + 1px);
@@ -93,7 +95,7 @@ export function renderStubPlaceholder(component, { title, description, dependenc
  * @param {string} componentTag
  */
 export function logStubWarning(componentTag) {
-  const registryKey = '__ollamaFeatureStubWarnings';
+  const registryKey = "__ollamaFeatureStubWarnings";
   const globalObj = window;
   if (!globalObj[registryKey]) {
     globalObj[registryKey] = new Set();
@@ -102,7 +104,7 @@ export function logStubWarning(componentTag) {
   if (!registry.has(componentTag)) {
     registry.add(componentTag);
     console.warn(
-      `[${componentTag}] Feature component stub loaded. Replace placeholder with full implementation per docs/features/01-base-components.md.`
+      `[${componentTag}] Feature component stub loaded. Replace placeholder with full implementation per docs/features/01-base-components.md.`,
     );
   }
 }

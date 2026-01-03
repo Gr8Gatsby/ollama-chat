@@ -1,4 +1,4 @@
-import { BaseComponent } from './base-component.js';
+import { BaseComponent } from "./base-component.js";
 
 /**
  * <ollama-select> - Dropdown select component
@@ -15,22 +15,34 @@ import { BaseComponent } from './base-component.js';
  *     <option value="opt2">Option 2</option>
  *   </ollama-select>
  */
+let selectIdCounter = 0;
+
 export class OllamaSelect extends BaseComponent {
   static get observedAttributes() {
-    return ['value', 'disabled', 'size'];
+    return [
+      "value",
+      "disabled",
+      "size",
+      "label",
+      "aria-label",
+      "aria-labelledby",
+    ];
   }
 
   constructor() {
     super();
+    this.inputId = `ollama-select-${++selectIdCounter}`;
+    this.optionObserver = new MutationObserver(() => this.syncOptions());
+    this.optionObserver.observe(this, { childList: true, subtree: true });
     this.render();
     this.setupEventListeners();
   }
 
   attributeChangedCallback(name, oldValue, newValue) {
     if (oldValue !== newValue) {
-      if (name === 'value') {
-        const select = this.shadowRoot.querySelector('select');
-        if (select) select.value = newValue || '';
+      if (name === "value") {
+        const select = this.shadowRoot.querySelector("select");
+        if (select) select.value = newValue || "";
       } else {
         this.render();
       }
@@ -38,17 +50,24 @@ export class OllamaSelect extends BaseComponent {
   }
 
   setupEventListeners() {
-    const select = this.shadowRoot.querySelector('select');
-    select.addEventListener('change', (e) => {
-      this.setAttribute('value', e.target.value);
-      this.emit('change', { value: e.target.value });
+    const select = this.shadowRoot.querySelector("select");
+    select.addEventListener("change", (e) => {
+      this.setAttribute("value", e.target.value);
+      this.emit("change", { value: e.target.value });
     });
   }
 
   render() {
-    const value = this.getAttribute('value') || '';
-    const disabled = this.getBooleanAttribute('disabled');
-    const size = this.getAttribute('size') || 'md';
+    const value = this.getAttribute("value") || "";
+    const disabled = this.getBooleanAttribute("disabled");
+    const size = this.getAttribute("size") || "md";
+    const labelText = this.getAttribute("label");
+    const ariaLabel = this.getAttribute("aria-label");
+    const ariaLabelledBy = this.getAttribute("aria-labelledby");
+    const labelId = labelText ? `${this.inputId}-label` : null;
+    const computedLabelledBy = [ariaLabelledBy, labelId]
+      .filter(Boolean)
+      .join(" ");
 
     this.shadowRoot.innerHTML = `
       <style>
@@ -56,6 +75,18 @@ export class OllamaSelect extends BaseComponent {
         ${this.getThemeStyles()}
 
         :host { display: inline-block; }
+
+        .field {
+          display: flex;
+          flex-direction: column;
+          gap: var(--spacing-xs);
+        }
+
+        .label-text {
+          font-size: var(--font-size-sm);
+          color: var(--color-text-secondary);
+          font-family: var(--font-family);
+        }
 
         select {
           font-family: var(--font-family);
@@ -98,19 +129,55 @@ export class OllamaSelect extends BaseComponent {
           padding-right: calc(var(--spacing-xl) + var(--spacing-md));
         }
       </style>
-      <select ${disabled ? 'disabled' : ''} class="${size}">
-        <slot></slot>
-      </select>
+      <div class="field" part="group">
+        ${labelText ? `<span class="label-text" id="${labelId}" part="label">${labelText}</span>` : ""}
+        <select
+          id="${this.inputId}"
+          class="${size}"
+          ${disabled ? "disabled" : ""}
+          aria-disabled="${disabled ? "true" : "false"}"
+          ${ariaLabel ? `aria-label="${ariaLabel}"` : ""}
+          ${computedLabelledBy ? `aria-labelledby="${computedLabelledBy}"` : ""}
+        >
+        </select>
+      </div>
     `;
     this.setupEventListeners();
+    this.syncOptions();
 
     // Set initial value
-    const select = this.shadowRoot.querySelector('select');
+    const select = this.shadowRoot.querySelector("select");
     if (value) select.value = value;
+    this.applyLocalizationAttributes(select);
+    const labelEl = this.shadowRoot.querySelector(".label-text");
+    if (labelEl) this.applyLocalizationAttributes(labelEl);
   }
 
-  get value() { return this.getAttribute('value') || ''; }
-  set value(val) { this.setAttribute('value', val); }
+  syncOptions() {
+    const select = this.shadowRoot?.querySelector("select");
+    if (!select) return;
+    const lightOptions = Array.from(this.querySelectorAll("option"));
+    if (!lightOptions.length) {
+      select.innerHTML = "";
+      return;
+    }
+    const clones = lightOptions.map((option) => option.cloneNode(true));
+    select.replaceChildren(...clones);
+    const currentValue = this.getAttribute("value");
+    if (currentValue) select.value = currentValue;
+  }
+
+  disconnectedCallback() {
+    this.optionObserver?.disconnect();
+    super.disconnectedCallback();
+  }
+
+  get value() {
+    return this.getAttribute("value") || "";
+  }
+  set value(val) {
+    this.setAttribute("value", val);
+  }
 }
 
-customElements.define('ollama-select', OllamaSelect);
+customElements.define("ollama-select", OllamaSelect);

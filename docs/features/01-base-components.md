@@ -97,6 +97,8 @@ None directly - foundational UI infrastructure
 - Each component in separate file: `component-name.js`
 - Export all components from `index.js` for easy imports
 - Icons via Lucide CDN (https://cdn.jsdelivr.net/npm/lucide-static@latest)
+- `npm run storybook` spins up a live component gallery powered by Storybook (Web Components + Vite); stories live in `src/stories/**` and cover every base component plus feature stubs.
+- Detailed attribute/event reference lives in `docs/components/base-components.md`.
 
 ## Component Specifications
 
@@ -186,6 +188,7 @@ None directly - foundational UI infrastructure
 - **Localization tests**: Snapshot LTR vs RTL renders and locale-specific strings to ensure no clipping; run headless browser diffs (Percy-style).
 - **Theming tests**: Programmatically toggle light/dark/custom themes and assert CSS variable overrides propagate to Shadow DOM.
 - **Manual validation**: Exercise demo page with VoiceOver/NVDA, verify tooltip delays, dialog focus trap behavior, and ensure icon-first buttons retain discoverability (per DR-1a).
+- **Current coverage**: `npm test` (Vitest + jsdom) executes automated checks for `<ollama-button>`, `<ollama-input>`, and `<ollama-select>` covering theme inheritance, locale syncing (dir/lang propagation), and accessible error states via axe-core.
 
 ## Change Log
 
@@ -214,3 +217,33 @@ None directly - foundational UI infrastructure
 - Added `src/frontend/components/features/README.md` to describe responsibilities, dependencies, and rollout guidance for feature components.
 - Implemented stub Web Components for the initial client surface (`ollama-chat-container`, conversation list/item, chat input, chat messages, user/AI responses, model selector, message actions, settings panel) with accessible placeholders and console warnings.
 - Introduced shared stub helpers to keep placeholders consistent and tied them back to Phase 7 expectations while preventing runtime errors during integration.
+
+### 2026-01-03 - Base Component Localization/Theming Tests Added
+**Agent**: Codex (GPT-5)
+- Enhanced `BaseComponent` to sync `data-theme`, `lang`, and `dir` from the document root and respond to `themechange` / `localechange` events with automatic re-rendering.
+- Updated interactive primitives (button, input, textarea, select, tooltip) to propagate localization attributes, expose ARIA metadata, and attach error messaging IDs for accessibility.
+- Added a root Vitest + jsdom test harness (`package.json`, `vitest.config.js`, `tests/`) with suites for `<ollama-button>`, `<ollama-input>`, and `<ollama-select>` covering theming, localization, and basic accessibility (`axe-core`), executed via `npm test`.
+
+### 2026-01-03 - Storybook Gallery Established
+**Agent**: Codex (GPT-5)
+- Integrated Storybook (web-components + Vite) with accessibility, docs, and Vitest addons; commands `npm run storybook` / `npm run build-storybook` produce interactive docs.
+- Authored stories for all base primitives (button, input, textarea, select, tooltip, icon, spinner, badge) plus the feature stub gallery so design/dev teams can visualize current states and theme/locale toggles.
+- Configured preview globals to mirror runtime theming + localization events (toolbar controls for theme, direction, locale) ensuring Storybook accurately reflects DR-4/DR-5 requirements.
+
+### 2026-01-03 - Icon Fetching + Reference Documentation
+**Agent**: Codex (GPT-5)
+- Updated `<ollama-icon>` to inline Lucide SVGs from the CDN with caching/fallback logic, fixing missing icons in Storybook (`With icon` scenario) and safeguarding against network failures.
+- Added `docs/components/base-components.md` as a concise reference for attributes, slots, events, and accessibility behavior per component to complement Storybook docs.
+- Storybook tests now reuse shared Vitest setup without errors after aligning jest-dom matcher imports for browser execution.
+
+### 2026-01-03 - Contrast Improvements & Field Accessibility
+**Agent**: Codex (GPT-5)
+- Raised contrast ratios for the shared theme palette (primary accent, focus outlines, badge variants) so every primitive satisfies WCAG 2.1 AA in light/dark modes without per-component overrides.
+- Extended `<ollama-input>`, `<ollama-textarea>`, and `<ollama-select>` with built-in `label` attributes plus pass-through `aria-label`/`aria-labelledby` handling and refreshed Storybook stories, eliminating unnamed form controls flagged by axe.
+- Documented the new select labeling behavior inside `docs/components/base-components.md` to keep DR-15 requirements traceable from spec to implementation.
+
+### 2026-01-03 - `<ollama-chat-input>` Implemented
+**Agent**: Codex (GPT-5)
+- Replaced the placeholder stub with a fully functional composer that wires `<ollama-textarea>`, icon-first action buttons, and the send button while meeting DR-1/DR-15 keyboard and ARIA requirements.
+- Added JSON-configurable attachment actions, token counting with limit feedback, and `send`/`action` custom events so upstream chat logic can hook into uploads and submission shortcuts.
+- Authored a dedicated Storybook gallery (`Feature/Ollama Chat Input`) plus Vitest coverage to validate localization, shortcut handling, and busy/disabled states; updated the component reference doc to describe the new API.

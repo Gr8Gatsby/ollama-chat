@@ -5,7 +5,30 @@
 export class BaseComponent extends HTMLElement {
   constructor() {
     super();
-    this.attachShadow({ mode: 'open' });
+    this.attachShadow({ mode: "open" });
+
+    this.__handleThemeChange = this.__handleThemeChange.bind(this);
+    this.__handleLocaleChange = this.__handleLocaleChange.bind(this);
+
+    this.syncThemeAttribute();
+    this.syncLocaleAttributes();
+  }
+
+  connectedCallback() {
+    this.syncThemeAttribute();
+    this.syncLocaleAttributes();
+
+    if (typeof window !== "undefined") {
+      window.addEventListener("themechange", this.__handleThemeChange);
+      window.addEventListener("localechange", this.__handleLocaleChange);
+    }
+  }
+
+  disconnectedCallback() {
+    if (typeof window !== "undefined") {
+      window.removeEventListener("themechange", this.__handleThemeChange);
+      window.removeEventListener("localechange", this.__handleLocaleChange);
+    }
   }
 
   /**
@@ -24,7 +47,7 @@ export class BaseComponent extends HTMLElement {
 
         /* Colors - Light theme defaults */
         --color-bg-primary: #ffffff;
-        --color-bg-secondary: #f5f5f5;
+        --color-bg-secondary: #f3f4f6;
         --color-bg-tertiary: #e0e0e0;
 
         --color-text-primary: #1a1a1a;
@@ -33,16 +56,26 @@ export class BaseComponent extends HTMLElement {
 
         --color-border: #e0e0e0;
         --color-border-hover: #cccccc;
-        --color-border-focus: #3b82f6;
+        --color-border-focus: #1d4ed8;
 
-        --color-accent-primary: #3b82f6;
-        --color-accent-primary-hover: #2563eb;
-        --color-accent-secondary: #10b981;
+        --color-accent-primary: #1d4ed8;
+        --color-accent-primary-hover: #1a43c7;
+        --color-accent-secondary: #0d9488;
+        --color-on-accent: #ffffff;
 
         --color-success: #22c55e;
         --color-warning: #f59e0b;
-        --color-error: #ef4444;
-        --color-info: #3b82f6;
+        --color-error: #b91c1c;
+        --color-info: #2563eb;
+
+        --badge-success-bg: #15803d;
+        --badge-on-success: #ffffff;
+        --badge-warning-bg: #b45309;
+        --badge-on-warning: #ffffff;
+        --badge-error-bg: #b91c1c;
+        --badge-on-error: #ffffff;
+        --badge-info-bg: #1d4ed8;
+        --badge-on-info: #ffffff;
 
         /* Typography */
         --font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
@@ -81,6 +114,7 @@ export class BaseComponent extends HTMLElement {
 
         --color-border: #333333;
         --color-border-hover: #404040;
+        --color-border-focus: #60a5fa;
       }
     `;
   }
@@ -106,11 +140,13 @@ export class BaseComponent extends HTMLElement {
    * @param {boolean} bubbles - Whether event bubbles (default: true)
    */
   emit(eventName, detail = null, bubbles = true) {
-    this.dispatchEvent(new CustomEvent(eventName, {
-      detail,
-      bubbles,
-      composed: true
-    }));
+    this.dispatchEvent(
+      new CustomEvent(eventName, {
+        detail,
+        bubbles,
+        composed: true,
+      }),
+    );
   }
 
   /**
@@ -129,9 +165,66 @@ export class BaseComponent extends HTMLElement {
    */
   setBooleanAttribute(name, value) {
     if (value) {
-      this.setAttribute(name, '');
+      this.setAttribute(name, "");
     } else {
       this.removeAttribute(name);
+    }
+  }
+
+  /**
+   * Ensure component inherits the active theme from <html data-theme="...">
+   */
+  syncThemeAttribute() {
+    if (this.hasAttribute("data-theme")) return;
+    const doc =
+      typeof document !== "undefined" ? document.documentElement : null;
+    const theme = doc?.getAttribute("data-theme") || "light";
+    this.setAttribute("data-theme", theme);
+  }
+
+  /**
+   * Ensure component inherits lang/dir from <html>
+   */
+  syncLocaleAttributes() {
+    const doc =
+      typeof document !== "undefined" ? document.documentElement : null;
+    if (!this.hasAttribute("lang")) {
+      const lang = doc?.getAttribute("lang") || "en";
+      this.setAttribute("lang", lang);
+    }
+    if (!this.hasAttribute("dir")) {
+      const dir = doc?.getAttribute("dir") || "ltr";
+      this.setAttribute("dir", dir);
+    }
+  }
+
+  /**
+   * Apply lang/dir attributes to interactive descendants
+   * @param {HTMLElement|null} element
+   */
+  applyLocalizationAttributes(element) {
+    if (!element) return;
+    const lang = this.getAttribute("lang") || "en";
+    const dir = this.getAttribute("dir") || "ltr";
+    element.setAttribute("lang", lang);
+    element.setAttribute("dir", dir);
+  }
+
+  __handleThemeChange(event) {
+    const theme = event?.detail?.theme;
+    if (!theme) return;
+    this.setAttribute("data-theme", theme);
+    if (typeof this.render === "function") {
+      this.render();
+    }
+  }
+
+  __handleLocaleChange(event) {
+    const { locale, dir } = event?.detail || {};
+    if (locale) this.setAttribute("lang", locale);
+    if (dir) this.setAttribute("dir", dir);
+    if (typeof this.render === "function") {
+      this.render();
     }
   }
 }

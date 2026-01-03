@@ -1,4 +1,4 @@
-import { BaseComponent } from './base-component.js';
+import { BaseComponent } from "./base-component.js";
 
 /**
  * <ollama-tooltip> - Accessible tooltip component
@@ -15,7 +15,7 @@ import { BaseComponent } from './base-component.js';
  */
 export class OllamaTooltip extends BaseComponent {
   static get observedAttributes() {
-    return ['position'];
+    return ["position"];
   }
 
   constructor() {
@@ -34,24 +34,24 @@ export class OllamaTooltip extends BaseComponent {
     const parent = this.parentElement;
     if (!parent) return;
 
-    parent.addEventListener('mouseenter', () => this.show());
-    parent.addEventListener('mouseleave', () => this.hide());
-    parent.addEventListener('focus', () => this.show());
-    parent.addEventListener('blur', () => this.hide());
+    parent.addEventListener("mouseenter", () => this.show());
+    parent.addEventListener("mouseleave", () => this.hide());
+    parent.addEventListener("focus", () => this.show());
+    parent.addEventListener("blur", () => this.hide());
   }
 
   show() {
-    const tooltip = this.shadowRoot.querySelector('.tooltip');
-    tooltip.classList.add('visible');
+    const tooltip = this.shadowRoot.querySelector(".tooltip");
+    tooltip.classList.add("visible");
   }
 
   hide() {
-    const tooltip = this.shadowRoot.querySelector('.tooltip');
-    tooltip.classList.remove('visible');
+    const tooltip = this.shadowRoot.querySelector(".tooltip");
+    tooltip.classList.remove("visible");
   }
 
   render() {
-    const position = this.getAttribute('position') || 'top';
+    const position = this.getAttribute("position") || "top";
 
     this.shadowRoot.innerHTML = `
       <style>
@@ -137,14 +137,19 @@ export class OllamaTooltip extends BaseComponent {
   }
 
   connectedCallback() {
+    super.connectedCallback();
     // Ensure parent has position: relative
     if (this.parentElement) {
-      const parentPosition = window.getComputedStyle(this.parentElement).position;
-      if (parentPosition === 'static') {
-        this.parentElement.style.position = 'relative';
+      const parentPosition = window.getComputedStyle(
+        this.parentElement,
+      ).position;
+      if (parentPosition === "static") {
+        this.parentElement.style.position = "relative";
       }
     }
+    const tooltip = this.shadowRoot.querySelector(".tooltip");
+    this.applyLocalizationAttributes(tooltip);
   }
 }
 
-customElements.define('ollama-tooltip', OllamaTooltip);
+customElements.define("ollama-tooltip", OllamaTooltip);

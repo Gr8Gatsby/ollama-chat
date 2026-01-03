@@ -1,4 +1,6 @@
-import { BaseComponent } from './base-component.js';
+import { BaseComponent } from "./base-component.js";
+
+let inputIdCounter = 0;
 
 /**
  * <ollama-input> - Text input component
@@ -21,21 +23,34 @@ import { BaseComponent } from './base-component.js';
  */
 export class OllamaInput extends BaseComponent {
   static get observedAttributes() {
-    return ['type', 'placeholder', 'value', 'disabled', 'required', 'error', 'size'];
+    return [
+      "type",
+      "placeholder",
+      "value",
+      "disabled",
+      "required",
+      "error",
+      "size",
+      "label",
+      "aria-label",
+      "aria-labelledby",
+    ];
   }
 
   constructor() {
     super();
+    this.inputId = `ollama-input-${++inputIdCounter}`;
+    this.errorMessageId = `ollama-input-error-${++inputIdCounter}`;
     this.render();
     this.setupEventListeners();
   }
 
   attributeChangedCallback(name, oldValue, newValue) {
     if (oldValue !== newValue) {
-      if (name === 'value') {
-        const input = this.shadowRoot.querySelector('input');
+      if (name === "value") {
+        const input = this.shadowRoot.querySelector("input");
         if (input && input.value !== newValue) {
-          input.value = newValue || '';
+          input.value = newValue || "";
         }
       } else {
         this.render();
@@ -44,26 +59,41 @@ export class OllamaInput extends BaseComponent {
   }
 
   setupEventListeners() {
-    const input = this.shadowRoot.querySelector('input');
+    const input = this.shadowRoot.querySelector("input");
 
-    input.addEventListener('input', (e) => {
-      this.setAttribute('value', e.target.value);
-      this.emit('input', { value: e.target.value });
+    input.addEventListener("input", (e) => {
+      this.setAttribute("value", e.target.value);
+      this.emit("input", { value: e.target.value });
     });
 
-    input.addEventListener('change', (e) => {
-      this.emit('change', { value: e.target.value });
+    input.addEventListener("change", (e) => {
+      this.emit("change", { value: e.target.value });
     });
   }
 
   render() {
-    const type = this.getAttribute('type') || 'text';
-    const placeholder = this.getAttribute('placeholder') || '';
-    const value = this.getAttribute('value') || '';
-    const disabled = this.getBooleanAttribute('disabled');
-    const required = this.getBooleanAttribute('required');
-    const error = this.getAttribute('error');
-    const size = this.getAttribute('size') || 'md';
+    const type = this.getAttribute("type") || "text";
+    const placeholder = this.getAttribute("placeholder") || "";
+    const value = this.getAttribute("value") || "";
+    const disabled = this.getBooleanAttribute("disabled");
+    const required = this.getBooleanAttribute("required");
+    const error = this.getAttribute("error");
+    const size = this.getAttribute("size") || "md";
+    const labelText = this.getAttribute("label");
+    const ariaLabel = this.getAttribute("aria-label");
+    const ariaLabelledBy = this.getAttribute("aria-labelledby");
+    const labelId = labelText ? `${this.inputId}-label` : null;
+    const computedLabelledBy = [ariaLabelledBy, labelId]
+      .filter(Boolean)
+      .join(" ");
+    const describedBy = error
+      ? `aria-describedby="${this.errorMessageId}"`
+      : "";
+    const ariaInvalid = error ? "true" : "false";
+    const resolvedAriaLabel =
+      !labelText && !ariaLabel && !ariaLabelledBy && placeholder
+        ? placeholder
+        : ariaLabel || "";
 
     this.shadowRoot.innerHTML = `
       <style>
@@ -79,6 +109,12 @@ export class OllamaInput extends BaseComponent {
           display: flex;
           flex-direction: column;
           gap: var(--spacing-xs);
+        }
+
+        .input-label {
+          font-size: var(--font-size-sm);
+          color: var(--color-text-secondary);
+          font-family: var(--font-family);
         }
 
         input {
@@ -137,40 +173,60 @@ export class OllamaInput extends BaseComponent {
           color: var(--color-error);
           font-size: var(--font-size-xs);
           margin-top: var(--spacing-xs);
+          font-family: var(--font-family);
         }
       </style>
       <div class="input-wrapper">
+        ${
+          labelText
+            ? `<span class="input-label" id="${labelId}" part="label">${labelText}</span>`
+            : ""
+        }
         <input
+          id="${this.inputId}"
           type="${type}"
           placeholder="${placeholder}"
           value="${value}"
-          ${disabled ? 'disabled' : ''}
-          ${required ? 'required' : ''}
-          class="${error ? 'error' : ''} ${size}"
+          ${disabled ? "disabled" : ""}
+          ${required ? "required" : ""}
+          aria-required="${required ? "true" : "false"}"
+          aria-invalid="${ariaInvalid}"
+          ${resolvedAriaLabel ? `aria-label="${resolvedAriaLabel}"` : ""}
+          ${computedLabelledBy ? `aria-labelledby="${computedLabelledBy}"` : ""}
+          ${describedBy}
+          class="${error ? "error" : ""} ${size}"
         />
-        ${error ? `<div class="error-message">${error}</div>` : ''}
+        ${
+          error
+            ? `<div class="error-message" id="${this.errorMessageId}" role="alert">${error}</div>`
+            : ""
+        }
       </div>
     `;
 
     this.setupEventListeners();
+    const inputEl = this.shadowRoot.querySelector("input");
+    this.applyLocalizationAttributes(inputEl);
+    const labelEl = this.shadowRoot.querySelector(".input-label");
+    if (labelEl) this.applyLocalizationAttributes(labelEl);
   }
 
   // Public API
   get value() {
-    return this.getAttribute('value') || '';
+    return this.getAttribute("value") || "";
   }
 
   set value(val) {
-    this.setAttribute('value', val);
+    this.setAttribute("value", val);
   }
 
   focus() {
-    this.shadowRoot.querySelector('input').focus();
+    this.shadowRoot.querySelector("input").focus();
   }
 
   blur() {
-    this.shadowRoot.querySelector('input').blur();
+    this.shadowRoot.querySelector("input").blur();
   }
 }
 
-customElements.define('ollama-input', OllamaInput);
+customElements.define("ollama-input", OllamaInput);

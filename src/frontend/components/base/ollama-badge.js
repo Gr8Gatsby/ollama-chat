@@ -1,4 +1,4 @@
-import { BaseComponent } from './base-component.js';
+import { BaseComponent } from "./base-component.js";
 
 /**
  * <ollama-badge> - Badge component for labels and status indicators
@@ -12,7 +12,7 @@ import { BaseComponent } from './base-component.js';
  */
 export class OllamaBadge extends BaseComponent {
   static get observedAttributes() {
-    return ['variant', 'size'];
+    return ["variant", "size"];
   }
 
   constructor() {
@@ -27,8 +27,8 @@ export class OllamaBadge extends BaseComponent {
   }
 
   render() {
-    const variant = this.getAttribute('variant') || 'default';
-    const size = this.getAttribute('size') || 'md';
+    const variant = this.getAttribute("variant") || "default";
+    const size = this.getAttribute("size") || "md";
 
     this.shadowRoot.innerHTML = `
       <style>
@@ -47,7 +47,7 @@ export class OllamaBadge extends BaseComponent {
           font-family: var(--font-family);
           font-weight: 500;
           border-radius: var(--radius-full);
-          padding: var(--spacing-xs) var(--spacing-sm);
+          padding: calc(var(--spacing-xs) + 1px) calc(var(--spacing-sm) + 1px);
           font-size: var(--font-size-xs);
           line-height: 1;
         }
@@ -58,33 +58,33 @@ export class OllamaBadge extends BaseComponent {
         }
 
         .badge.success {
-          background: rgba(34, 197, 94, 0.1);
-          color: var(--color-success);
+          background: var(--badge-success-bg, #15803d);
+          color: var(--badge-on-success, #fff);
         }
 
         .badge.warning {
-          background: rgba(245, 158, 11, 0.1);
-          color: var(--color-warning);
+          background: var(--badge-warning-bg, #b45309);
+          color: var(--badge-on-warning, #fff);
         }
 
         .badge.error {
-          background: rgba(239, 68, 68, 0.1);
-          color: var(--color-error);
+          background: var(--badge-error-bg, #b91c1c);
+          color: var(--badge-on-error, #fff);
         }
 
         .badge.info {
-          background: rgba(59, 130, 246, 0.1);
-          color: var(--color-info);
+          background: var(--badge-info-bg, #1d4ed8);
+          color: var(--badge-on-info, #fff);
         }
 
         .badge.sm {
           font-size: 0.625rem;
-          padding: 1px var(--spacing-xs);
+          padding: calc(1px + 1px) calc(var(--spacing-xs) + 1px);
         }
 
         .badge.lg {
           font-size: var(--font-size-sm);
-          padding: var(--spacing-sm) var(--spacing-md);
+          padding: calc(var(--spacing-sm) + 1px) calc(var(--spacing-md) + 1px);
         }
       </style>
       <span class="badge ${variant} ${size}">
@@ -94,4 +94,4 @@ export class OllamaBadge extends BaseComponent {
   }
 }
 
-customElements.define('ollama-badge', OllamaBadge);
+customElements.define("ollama-badge", OllamaBadge);
