@@ -4,7 +4,7 @@ import { BaseComponent } from "./base-component.js";
  * <ollama-tooltip> - Accessible tooltip component
  *
  * Attributes:
- *   position: top | bottom | left | right (default: top)
+ *   position: auto | top | top-right | bottom | bottom-left | bottom-right | left | right (default: auto)
  *
  * Usage: Place inside element that needs tooltip
  * Example:
@@ -42,6 +42,8 @@ export class OllamaTooltip extends BaseComponent {
 
   show() {
     const tooltip = this.shadowRoot.querySelector(".tooltip");
+    this.applyAutoPosition(tooltip);
+    this.applyPositionStyles(tooltip);
     tooltip.classList.add("visible");
   }
 
@@ -50,8 +52,99 @@ export class OllamaTooltip extends BaseComponent {
     tooltip.classList.remove("visible");
   }
 
+  applyAutoPosition(tooltip) {
+    const explicitPosition = this.getAttribute("position");
+    if (explicitPosition && explicitPosition !== "auto") {
+      this.removeAttribute("data-position");
+      return;
+    }
+
+    const parent = this.parentElement;
+    if (!parent || !tooltip) return;
+
+    const rect = parent.getBoundingClientRect();
+    const viewportWidth =
+      window.innerWidth || document.documentElement.clientWidth;
+    const viewportHeight =
+      window.innerHeight || document.documentElement.clientHeight;
+
+    const horizontal =
+      rect.left < viewportWidth * 0.3
+        ? "right"
+        : rect.right > viewportWidth * 0.7
+          ? "left"
+          : "center";
+    const vertical = rect.top < viewportHeight * 0.3 ? "bottom" : "top";
+
+    let computed = "top";
+    if (vertical === "bottom" && horizontal === "right") {
+      computed = "bottom-right";
+    } else if (vertical === "bottom" && horizontal === "left") {
+      computed = "bottom-left";
+    } else if (vertical === "bottom") {
+      computed = "bottom";
+    } else if (vertical === "top" && horizontal === "right") {
+      computed = "top-right";
+    } else if (vertical === "top" && horizontal === "left") {
+      computed = "left";
+    }
+
+    this.setAttribute("data-position", computed);
+  }
+
+  applyPositionStyles(tooltip) {
+    const parent = this.parentElement;
+    if (!parent || !tooltip) return;
+
+    const position =
+      this.getAttribute("position") ||
+      this.getAttribute("data-position") ||
+      "top";
+    const rect = parent.getBoundingClientRect();
+    const tooltipWidth = tooltip.offsetWidth || 0;
+    const tooltipHeight = tooltip.offsetHeight || 0;
+    const spacing = 8;
+    const viewportWidth =
+      window.innerWidth || document.documentElement.clientWidth;
+    const viewportHeight =
+      window.innerHeight || document.documentElement.clientHeight;
+
+    let left = rect.left + rect.width / 2 - tooltipWidth / 2;
+    let top = rect.top - tooltipHeight - spacing;
+
+    if (position === "top-right") {
+      left = rect.left + rect.width / 2;
+      top = rect.top - tooltipHeight - spacing;
+    } else if (position === "bottom") {
+      left = rect.left + rect.width / 2 - tooltipWidth / 2;
+      top = rect.bottom + spacing;
+    } else if (position === "bottom-left") {
+      left = rect.left + rect.width / 2 - tooltipWidth;
+      top = rect.bottom + spacing;
+    } else if (position === "bottom-right") {
+      left = rect.left + rect.width / 2;
+      top = rect.bottom + spacing;
+    } else if (position === "left") {
+      left = rect.left - tooltipWidth - spacing;
+      top = rect.top + rect.height / 2 - tooltipHeight / 2;
+    } else if (position === "right") {
+      left = rect.right + spacing;
+      top = rect.top + rect.height / 2 - tooltipHeight / 2;
+    }
+
+    const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
+    left = clamp(left, spacing, viewportWidth - tooltipWidth - spacing);
+    top = clamp(top, spacing, viewportHeight - tooltipHeight - spacing);
+
+    this.style.left = `${left}px`;
+    this.style.top = `${top}px`;
+    this.style.right = "auto";
+    this.style.bottom = "auto";
+    this.style.transform = "none";
+  }
+
   render() {
-    const position = this.getAttribute("position") || "top";
+    const position = this.getAttribute("position") || "auto";
 
     this.shadowRoot.innerHTML = `
       <style>
@@ -59,8 +152,8 @@ export class OllamaTooltip extends BaseComponent {
         ${this.getThemeStyles()}
 
         :host {
-          position: absolute;
-          z-index: 9999;
+          position: fixed;
+          z-index: 2147483647;
           pointer-events: none;
         }
 
@@ -80,54 +173,7 @@ export class OllamaTooltip extends BaseComponent {
 
         .tooltip.visible {
           opacity: 1;
-        }
-
-        /* Position: Top */
-        :host([position="top"]) {
-          bottom: 100%;
-          left: 50%;
-          transform: translateX(-50%);
-          margin-bottom: var(--spacing-sm);
-        }
-
-        :host([position="top"]) .tooltip.visible {
-          transform: translateY(-4px);
-        }
-
-        /* Position: Bottom */
-        :host([position="bottom"]) {
-          top: 100%;
-          left: 50%;
-          transform: translateX(-50%);
-          margin-top: var(--spacing-sm);
-        }
-
-        :host([position="bottom"]) .tooltip.visible {
-          transform: translateY(4px);
-        }
-
-        /* Position: Left */
-        :host([position="left"]) {
-          right: 100%;
-          top: 50%;
-          transform: translateY(-50%);
-          margin-right: var(--spacing-sm);
-        }
-
-        :host([position="left"]) .tooltip.visible {
-          transform: translateX(-4px) translateY(-50%);
-        }
-
-        /* Position: Right */
-        :host([position="right"]) {
-          left: 100%;
-          top: 50%;
-          transform: translateY(-50%);
-          margin-left: var(--spacing-sm);
-        }
-
-        :host([position="right"]) .tooltip.visible {
-          transform: translateX(4px) translateY(-50%);
+          transform: translateY(-2px);
         }
       </style>
       <div class="tooltip" role="tooltip">

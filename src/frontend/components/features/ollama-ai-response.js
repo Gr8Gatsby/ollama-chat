@@ -1,25 +1,99 @@
-import { FeatureStubComponent, renderStubPlaceholder, logStubWarning } from './feature-stub-helpers.js';
+import { BaseComponent } from "../base/base-component.js";
+import "../base/ollama-badge.js";
+import "../base/ollama-spinner.js";
+import "../base/ollama-text.js";
+import "../base/ollama-tooltip.js";
+import "./ollama-message-actions.js";
 
-class OllamaAiResponse extends FeatureStubComponent {
+class OllamaAiResponse extends BaseComponent {
+  static get observedAttributes() {
+    return ["content", "timestamp", "tokens", "model", "streaming"];
+  }
+
   constructor() {
     super();
-    renderStubPlaceholder(this, {
-      title: '<ollama-ai-response>',
-      description: 'Handles streaming AI output, markdown rendering, and code blocks for assistant messages.',
-      dependencies: ['<ollama-icon>', '<ollama-spinner>', '<ollama-badge>', '<ollama-tooltip>'],
-      responsibilities: [
-        'Render markdown progressively and delegate code blocks to `<ollama-code-block>` once available (DR-1b).',
-        'Show model badges + token usage, respecting icon-first patterns (DR-3).',
-        'Display streaming indicator + error recovery states tied to WebSocket events (DR-11/DR-12).',
-        'Surface `<ollama-message-actions>` for copy/regenerate/delete operations.'
-      ]
-    });
-    logStubWarning('ollama-ai-response');
+    this.render();
+  }
+
+  attributeChangedCallback(name, oldValue, newValue) {
+    if (oldValue !== newValue) {
+      this.render();
+    }
+  }
+
+  render() {
+    const content = this.getAttribute("content") || "";
+    const timestamp = this.getAttribute("timestamp") || "";
+    const tokens = this.getAttribute("tokens") || "";
+    const model = this.getAttribute("model") || "";
+    const streaming = this.hasAttribute("streaming");
+
+    this.shadowRoot.innerHTML = `
+      <style>
+        ${this.getResetStyles()}
+        ${this.getThemeStyles()}
+
+        :host {
+          display: block;
+          width: 100%;
+        }
+
+        .response {
+          display: flex;
+          flex-direction: column;
+          gap: var(--spacing-sm);
+          padding: var(--spacing-sm) var(--spacing-md);
+        }
+
+        .meta {
+          display: inline-flex;
+          align-items: center;
+          gap: var(--spacing-xs);
+          color: var(--color-text-secondary);
+        }
+
+        .streaming {
+          display: inline-flex;
+          align-items: center;
+          gap: var(--spacing-xs);
+        }
+      </style>
+      <div class="response" part="response">
+        <div class="content" part="content">
+          <slot>
+            <ollama-text>${content}</ollama-text>
+          </slot>
+        </div>
+        <div class="meta" part="meta">
+          ${model ? `<ollama-badge size="sm">${model}</ollama-badge>` : ""}
+          ${timestamp ? `<ollama-text variant="caption" color="muted">${timestamp}</ollama-text>` : ""}
+          ${
+            tokens
+              ? `<span class="token-badge">
+                   <ollama-badge size="sm" variant="default">${tokens}</ollama-badge>
+                   <ollama-tooltip position="top-right">Tokens used</ollama-tooltip>
+                 </span>`
+              : ""
+          }
+          ${
+            streaming
+              ? `<span class="streaming">
+                   <ollama-spinner size="sm"></ollama-spinner>
+                   <ollama-text variant="caption" color="muted">Generating</ollama-text>
+                 </span>`
+              : ""
+          }
+          <slot name="actions">
+            <ollama-message-actions size="sm"></ollama-message-actions>
+          </slot>
+        </div>
+      </div>
+    `;
   }
 }
 
-if (!customElements.get('ollama-ai-response')) {
-  customElements.define('ollama-ai-response', OllamaAiResponse);
+if (!customElements.get("ollama-ai-response")) {
+  customElements.define("ollama-ai-response", OllamaAiResponse);
 }
 
 export { OllamaAiResponse };

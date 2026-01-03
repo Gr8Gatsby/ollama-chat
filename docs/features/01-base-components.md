@@ -192,6 +192,41 @@ None directly - foundational UI infrastructure
 
 ## Change Log
 
+### 2026-01-04 - Settings Panel + Dialog
+**Agent**: Codex (GPT-5)
+- Implemented base `<ollama-dialog>` with focus trapping, dismissible behavior, and header/footer slots.
+- Built `<ollama-settings-panel>` atop the dialog with theme/language/model selects and `settings-change` events.
+- Added Storybook coverage for dialog and settings panel plus reference documentation updates.
+
+### 2026-01-04 - Model Selector Implemented
+**Agent**: Codex (GPT-5)
+- Implemented `<ollama-model-selector>` with base `<ollama-select>`, capability badges, and `model-change` events.
+- Added Storybook coverage and documented the API in the component reference.
+
+### 2026-01-04 - Message Actions Component
+**Agent**: Codex (GPT-5)
+- Implemented `<ollama-message-actions>` with icon-first buttons and default copy/regenerate/delete actions.
+- Wired message components to use the message actions by default with optional slot overrides.
+- Added Storybook coverage and documented the component API.
+
+### 2026-01-04 - Message Components Implemented
+**Agent**: Codex (GPT-5)
+- Implemented `<ollama-chat-message>`, `<ollama-user-message>`, and `<ollama-ai-response>` with role-based layouts, metadata badges, and streaming indicators.
+- Added Storybook coverage for user messages, AI responses, and the wrapper component.
+- Updated component reference documentation to describe message component APIs.
+
+### 2026-01-04 - Sidebar Controls + Conversation List
+**Agent**: Codex (GPT-5)
+- Added collapsible sidebar toggle logic and overlay handling to `<ollama-chat-container>` plus header control slot support.
+- Implemented `<ollama-conversation-list>` and `<ollama-conversation-item>` with selection events, badges, and actions using base primitives.
+- Added Storybook coverage for conversation list/item and updated component reference documentation.
+
+### 2026-01-04 - Tooltip + Typography Foundation
+**Agent**: Codex (GPT-5)
+- Added `<ollama-text>` typography primitive plus Storybook coverage for consistent labels, captions, and titles across feature components.
+- Rewired `<ollama-chat-input>` attachment buttons to use `<ollama-tooltip>` instead of native `title` attributes for icon-first guidance.
+- Updated the chat container Storybook example to use `<ollama-text>` for sidebar headings and documented the new component in the base reference.
+
 ### 2026-01-02 - Feature Document Created
 **Agent**: Claude (Sonnet 4.5)
 - Created feature document with metadata and implementation plan
@@ -247,3 +282,8 @@ None directly - foundational UI infrastructure
 - Replaced the placeholder stub with a fully functional composer that wires `<ollama-textarea>`, icon-first action buttons, and the send button while meeting DR-1/DR-15 keyboard and ARIA requirements.
 - Added JSON-configurable attachment actions, token counting with limit feedback, and `send`/`action` custom events so upstream chat logic can hook into uploads and submission shortcuts.
 - Authored a dedicated Storybook gallery (`Feature/Ollama Chat Input`) plus Vitest coverage to validate localization, shortcut handling, and busy/disabled states; updated the component reference doc to describe the new API.
+
+### 2026-01-03 - `<ollama-chat-container>` Implemented
+**Agent**: Codex (GPT-5)
+- Replaced the stub with a real layout component that defines sidebar/header/main/footer slots using responsive CSS grid and theme-aware tokens.
+- Added Storybook coverage to verify sidebar toggle behavior and slot layout at desktop and mobile breakpoints.

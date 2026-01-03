@@ -95,15 +95,17 @@ export class OllamaSelect extends BaseComponent {
           background: var(--color-bg-primary);
           border: 1px solid var(--color-border);
           border-radius: var(--radius-md);
-          padding: var(--spacing-sm) var(--spacing-md);
-          padding-right: var(--spacing-xl);
+          padding: var(--select-padding-block, var(--spacing-sm))
+            var(--select-padding-inline, var(--spacing-md));
+          padding-right: var(--select-padding-right, var(--spacing-xl));
           outline: none;
           cursor: pointer;
           transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
           appearance: none;
           background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23666' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
           background-repeat: no-repeat;
-          background-position: right var(--spacing-sm) center;
+          background-position: right var(--select-chevron-offset, var(--spacing-sm))
+            center;
         }
 
         select:hover:not(:disabled) { border-color: var(--color-border-hover); }
@@ -119,14 +121,16 @@ export class OllamaSelect extends BaseComponent {
 
         select.sm {
           font-size: var(--font-size-sm);
-          padding: var(--spacing-xs) var(--spacing-sm);
-          padding-right: var(--spacing-lg);
+          --select-padding-block: var(--spacing-xs);
+          --select-padding-inline: var(--spacing-sm);
+          --select-padding-right: calc(var(--spacing-lg) + var(--spacing-xs));
         }
 
         select.lg {
           font-size: var(--font-size-lg);
-          padding: var(--spacing-md) var(--spacing-lg);
-          padding-right: calc(var(--spacing-xl) + var(--spacing-md));
+          --select-padding-block: var(--spacing-md);
+          --select-padding-inline: var(--spacing-lg);
+          --select-padding-right: calc(var(--spacing-xl) + var(--spacing-md));
         }
       </style>
       <div class="field" part="group">

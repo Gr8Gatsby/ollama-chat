@@ -3,6 +3,7 @@ import "../base/ollama-textarea.js";
 import "../base/ollama-button.js";
 import "../base/ollama-icon.js";
 import "../base/ollama-tooltip.js";
+import "../base/ollama-select.js";
 
 const KEY_CODES = {
   ENTER: "Enter",
@@ -38,6 +39,8 @@ export class OllamaChatInput extends BaseComponent {
       "aria-label",
       "aria-labelledby",
       "busy",
+      "model",
+      "model-options",
     ];
   }
 
@@ -89,6 +92,22 @@ export class OllamaChatInput extends BaseComponent {
     }
   }
 
+  get modelOptions() {
+    const raw = this.getAttribute("model-options");
+    if (!raw) {
+      return [{ label: "llama3", value: "llama3" }];
+    }
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) && parsed.length
+        ? parsed
+        : [{ label: "llama3", value: "llama3" }];
+    } catch (error) {
+      console.warn("<ollama-chat-input> invalid model-options", error);
+      return [{ label: "llama3", value: "llama3" }];
+    }
+  }
+
   attachEventListeners() {
     const textarea = this.textarea;
     if (!textarea) return;
@@ -98,6 +117,7 @@ export class OllamaChatInput extends BaseComponent {
       this.emit("input", { value: this.value });
       this.updateTokenCount();
       this.updateSendState();
+      this.autoResizeTextarea();
     });
 
     textarea.addEventListener("keydown", (event) => {
@@ -117,6 +137,21 @@ export class OllamaChatInput extends BaseComponent {
         this.emit("action", { id: actionId });
       });
     });
+
+    const modelSelect = this.shadowRoot?.querySelector(".model-select");
+    modelSelect?.addEventListener("change", (event) => {
+      const nextValue = event.detail?.value ?? event.target?.value;
+      this.setAttribute("model", nextValue);
+      this.emit("model-change", { value: nextValue });
+    });
+  }
+
+  autoResizeTextarea() {
+    const textarea = this.textarea;
+    const native = textarea?.shadowRoot?.querySelector("textarea");
+    if (!native) return;
+    native.style.height = "auto";
+    native.style.height = `${Math.max(native.scrollHeight, 48)}px`;
   }
 
   handleSend(source) {
@@ -187,11 +222,14 @@ export class OllamaChatInput extends BaseComponent {
   }
 
   render() {
-    const placeholder = this.getAttribute("placeholder") || "Ask Ollama Chat…";
+    const placeholder = this.getAttribute("placeholder") || "Ask anything";
     const busy = this.getBooleanAttribute("busy");
     const disabled = this.getBooleanAttribute("disabled");
     const ariaLabelledBy = this.getAttribute("aria-labelledby") || "";
     const labelText = this.resolveLabelText();
+    const modelOptions = this.modelOptions;
+    const selectedModel =
+      this.getAttribute("model") || modelOptions[0]?.value || "";
     this.tokenCount = this.calculateTokens(this.value);
 
     this.shadowRoot.innerHTML = `
@@ -202,22 +240,22 @@ export class OllamaChatInput extends BaseComponent {
         :host {
           display: block;
           background: var(--color-bg-primary);
-          padding: var(--spacing-xl);
+          padding: var(--spacing-lg) var(--spacing-xl);
         }
 
         .composer {
           display: flex;
           flex-direction: column;
-          gap: var(--spacing-lg);
+          gap: var(--spacing-md);
         }
 
         .input-shell {
           display: flex;
           flex-direction: column;
-          gap: var(--spacing-sm);
+          gap: var(--spacing-xs);
           padding: var(--spacing-lg);
           background: var(--color-bg-secondary);
-          border-radius: 40px;
+          border-radius: 20px;
           border: 1px solid rgba(0, 0, 0, 0.04);
           box-shadow: var(--shadow-sm);
         }
@@ -240,12 +278,19 @@ export class OllamaChatInput extends BaseComponent {
           align-items: center;
           justify-content: space-between;
           gap: var(--spacing-md);
+          padding-top: var(--spacing-xs);
+        }
+
+        .action-cluster {
+          display: inline-flex;
+          align-items: center;
+          gap: var(--spacing-sm);
         }
 
         .action-buttons {
           display: inline-flex;
           align-items: center;
-          gap: var(--spacing-md);
+          gap: var(--spacing-xs);
           font-size: var(--font-size-sm);
           color: var(--color-text-secondary);
         }
@@ -254,11 +299,11 @@ export class OllamaChatInput extends BaseComponent {
           display: inline-flex;
           align-items: center;
           justify-content: center;
-          width: 32px;
-          height: 32px;
-          border-radius: 16px;
+          width: 28px;
+          height: 28px;
+          border-radius: 14px;
           border: none;
-          background: rgba(0, 0, 0, 0.05);
+          background: rgba(0, 0, 0, 0.08);
           color: var(--color-text-secondary);
           cursor: pointer;
         }
@@ -280,6 +325,12 @@ export class OllamaChatInput extends BaseComponent {
           background: rgba(255, 255, 255, 0.08);
         }
 
+        .model-select {
+          height: 32px;
+          display: inline-flex;
+          align-items: center;
+        }
+
         .status-stack {
           display: inline-flex;
           align-items: center;
@@ -287,23 +338,13 @@ export class OllamaChatInput extends BaseComponent {
         }
 
         .status-line {
-          display: flex;
-          flex-direction: column;
-          align-items: flex-end;
-          gap: var(--spacing-xs);
-          font-size: var(--font-size-sm);
-          color: var(--color-text-secondary);
-        }
-
-        .token-count.over-limit {
-          color: var(--color-error);
-          font-weight: 600;
+          display: none;
         }
 
         .send-button {
-          width: 48px;
-          height: 48px;
-          border-radius: 24px;
+          width: 32px;
+          height: 32px;
+          border-radius: 16px;
           border: none;
           background: var(--color-accent-primary);
           display: inline-flex;
@@ -329,30 +370,49 @@ export class OllamaChatInput extends BaseComponent {
             <ollama-textarea
               placeholder="${placeholder}"
               value="${this.value || ""}"
-              rows="3"
+              rows="2"
               appearance="minimal"
               aria-label="${labelText}"
               aria-labelledby="${ariaLabelledBy}"
               style="
-                --textarea-font-size: var(--font-size-lg);
-                --textarea-line-height: 1.6;
-                --textarea-padding-block: var(--spacing-sm);
+                --textarea-font-size: var(--font-size-md);
+                --textarea-line-height: 1.4;
+                --textarea-padding-block: var(--spacing-xs);
                 --textarea-padding-inline: 0;
                 --textarea-border-radius: 0;
+                --textarea-placeholder-color: #4b5563;
               "
               ${disabled ? "disabled" : ""}
               ${busy ? 'aria-busy="true"' : ""}
             ></ollama-textarea>
           </div>
           <div class="composer-footer">
-            <div class="action-buttons" role="group" aria-label="Composer attachments">
-              ${this.renderActionButtons(disabled || busy)}
+            <div class="action-cluster">
+              <div class="action-buttons" role="group" aria-label="Composer attachments">
+                ${this.renderActionButtons(disabled || busy)}
+              </div>
+              <ollama-select
+                class="model-select"
+                size="sm"
+                value="${selectedModel}"
+                aria-label="Model"
+                style="
+                  min-width: 108px;
+                  --select-padding-right: calc(var(--spacing-lg) + var(--spacing-sm));
+                  --select-chevron-offset: var(--spacing-sm);
+                "
+                ${disabled ? "disabled" : ""}
+              >
+                ${modelOptions
+                  .map(
+                    (opt) =>
+                      `<option value="${opt.value}">${opt.label}</option>`,
+                  )
+                  .join("")}
+              </ollama-select>
             </div>
             <div class="status-stack">
-              <div class="status-line">
-                <strong><slot name="model-info">Model: llama3</slot></strong>
-                <span class="token-count" role="status" aria-live="polite">${this.tokenCount}</span>
-              </div>
+              <div class="status-line"></div>
               <button
                 type="button"
                 class="send-button"
@@ -371,25 +431,31 @@ export class OllamaChatInput extends BaseComponent {
 
     this.attachEventListeners();
     this.updateTokenCount();
+    this.autoResizeTextarea();
   }
 
   renderActionButtons(disabled) {
     return this.uploadActions
-      .map(
-        (action) => `
+      .map((action) => {
+        const tooltipText = action.tooltip || action.label || action.id;
+        return `
           <button
             type="button"
             class="action-button"
             data-action="${action.id}"
-            title="${action.tooltip || action.id}"
             ${disabled ? "disabled" : ""}
-            aria-label="${action.tooltip || action.label || action.id}"
+            aria-label="${tooltipText}"
           >
             <ollama-icon name="${action.icon}" size="sm"></ollama-icon>
             ${action.label ? `<span class="label">${action.label}</span>` : ""}
+            ${
+              tooltipText
+                ? `<ollama-tooltip position="top-right">${tooltipText}</ollama-tooltip>`
+                : ""
+            }
           </button>
-        `,
-      )
+        `;
+      })
       .join("");
   }
 }

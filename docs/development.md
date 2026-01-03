@@ -360,6 +360,8 @@ graph TD
 - Icon buttons MUST use `<ollama-button variant="icon">` with `<ollama-icon>` child
 - ALL icon-only buttons MUST have `<ollama-tooltip>` for accessibility and discoverability
 - Tooltips MUST appear on hover and focus
+- Do NOT use native `title` attributes for UI tooltips; only `<ollama-tooltip>` is allowed
+- Tooltip positioning MUST avoid covering the trigger control (use auto positioning or bottom placement when near the top edge)
 - Common actions (delete, edit, copy, send, etc.) SHOULD use icons only
 - Text labels SHOULD be used only for primary CTAs or uncommon actions
 - Icon choice MUST be semantically obvious (use common conventions)
@@ -2908,9 +2910,10 @@ make health          # Check if all services running
 ### Component Design Principles
 - **Consistency Over Customization**: Reuse existing components even if slightly imperfect
 - **Justify New Components**: Document why existing components cannot be extended/reused
+- **Base Components First**: Feature components MUST compose from base primitives (button, input, select, icon, tooltip, text). Do not introduce raw HTML controls unless a base component cannot support the requirement.
 - **Visual Unity**: All dialogs look the same, all buttons behave the same, all inputs share styles
 - **Theme Integration**: All components MUST respect CSS custom properties for colors, spacing, typography
-- **Icon-First**: Use icon + tooltip pattern for common actions to reduce visual clutter
+- **Icon-First**: Use icon + tooltip pattern for common actions to reduce visual clutter. Tooltips must use `<ollama-tooltip>` and auto-position away from the trigger to avoid overlap.
 - **RTL-First Design**: All layouts MUST work in both LTR and RTL without code changes
 - **Compact UI**: Default to tight spacing (--spacing-sm, --spacing-md) for information density; use larger spacing (--spacing-lg, --spacing-xl) sparingly for major separations only
 

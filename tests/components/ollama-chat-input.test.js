@@ -70,7 +70,7 @@ describe("ollama-chat-input", () => {
     );
   });
 
-  it("tracks token counts and respects token-limit attribute", async () => {
+  it("omits token counter display in the composer footer", async () => {
     const composer = createComposer();
     composer.setAttribute("token-limit", "5");
     composer.setAttribute("value", "one two three four six");
@@ -78,14 +78,7 @@ describe("ollama-chat-input", () => {
     await Promise.resolve();
 
     const counter = composer.shadowRoot.querySelector(".token-count");
-    expect(counter.textContent).toBe("5/5");
-    expect(counter.classList.contains("over-limit")).toBe(false);
-
-    composer.setAttribute("value", "one two three four five six");
-    await Promise.resolve();
-
-    expect(counter.textContent).toBe("6/5");
-    expect(counter.classList.contains("over-limit")).toBe(true);
+    expect(counter).toBeNull();
   });
 
   it("emits action events when clicking attachment buttons", async () => {
@@ -119,5 +112,33 @@ describe("ollama-chat-input", () => {
 
     const tool = composer.shadowRoot.querySelector(".action-button");
     expect(tool.hasAttribute("disabled")).toBe(true);
+  });
+
+  it("emits model-change when selecting a new model", async () => {
+    const composer = createComposer();
+    composer.setAttribute(
+      "model-options",
+      JSON.stringify([
+        { label: "llama3", value: "llama3" },
+        { label: "turbo", value: "turbo" },
+      ]),
+    );
+    composer.setAttribute("model", "llama3");
+    document.body.appendChild(composer);
+    await Promise.resolve();
+
+    const handler = vi.fn();
+    composer.addEventListener("model-change", handler);
+
+    const modelSelect = composer.shadowRoot.querySelector(".model-select");
+    const nativeSelect = modelSelect.shadowRoot.querySelector("select");
+    nativeSelect.value = "turbo";
+    nativeSelect.dispatchEvent(new Event("change", { bubbles: true }));
+
+    expect(handler).toHaveBeenCalledWith(
+      expect.objectContaining({
+        detail: expect.objectContaining({ value: "turbo" }),
+      }),
+    );
   });
 });
