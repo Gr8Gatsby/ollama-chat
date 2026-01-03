@@ -92,41 +92,44 @@ This specification defines the technical requirements for building Ollama Chat, 
 
 ```mermaid
 graph TD
-    A[index.html] --> B[header]
-    A --> C[aside - Sidebar]
-    A --> D[main - Chat Area]
-    A --> E[footer]
+    A[index.html] --> B[ollama-chat-container]
+    B --> B1[header - App Bar]
+    B --> B2[aside - Sidebar]
+    B --> B3[main - Workspace]
+    B --> B4[footer - Chat Input]
     
     style A fill:#e1f5ff
     style B fill:#fff4e1
-    style C fill:#ffe1f5
-    style D fill:#e1ffe1
-    style E fill:#f5e1ff
+    style B1 fill:#fff4e1
+    style B2 fill:#ffe1f5
+    style B3 fill:#e1ffe1
+    style B4 fill:#f5e1ff
 ```
+
+**Mode behavior**:
+- App bar toggle switches **Chat** vs **Project** workspace.
+- Project mode hides the chat input footer and collapses the conversation sidebar.
+- Sidebar user card remains sticky at the bottom when sidebar is visible.
+- Sidebar open/closed state is sticky across mode switches.
+- Project file tree expansion state is sticky across file selection and mode switches.
 
 ---
 
-#### Header Section
+#### Header Section (App Bar)
 
 ```mermaid
 graph TD
-    B[header] --> B1[ollama-model-selector]
-    B --> B2[ollama-settings-panel]
-    B --> B3[ollama-theme-toggle]
-    B --> B4[ollama-language-selector]
-    
-    B2 --> S1[ollama-dialog]
-    S1 --> S2[ollama-input]
-    S1 --> S3[ollama-select]
-    S1 --> S4[ollama-button]
-    
-    style B fill:#fff4e1
-    
+    B1[header - App Bar] --> H0[ollama-button - Sidebar Toggle]
+    H0 --> H0I[ollama-icon]
+    H0 --> H0T[ollama-tooltip]
+    B1 --> H1[ollama-toggle-switch]
+
+    style B1 fill:#fff4e1
+
     classDef baseComponent fill:#ffd700,stroke:#333,stroke-width:2px
     classDef featureComponent fill:#87ceeb,stroke:#333,stroke-width:2px
     
-    class B1,B2,B3,B4 featureComponent
-    class S1,S2,S3,S4 baseComponent
+    class H0,H0I,H0T,H1 baseComponent
 ```
 
 ---
@@ -139,27 +142,51 @@ graph TD
     C1 --> C2[ollama-conversation-item]
     C2 --> C3[ollama-badge]
     C --> C4[ollama-button - New Chat]
+    C --> C5[ollama-sidebar-user]
+    C5 --> C6[ollama-avatar]
+    C5 --> C7[ollama-dropdown]
+    C5 --> C8[ollama-text]
     
     style C fill:#ffe1f5
     
     classDef baseComponent fill:#ffd700,stroke:#333,stroke-width:2px
     classDef featureComponent fill:#87ceeb,stroke:#333,stroke-width:2px
     
-    class C1,C2 featureComponent
-    class C3,C4 baseComponent
+    class C1,C2,C5 featureComponent
+    class C3,C4,C6,C7,C8 baseComponent
 ```
 
 ---
 
-#### Main Chat Area
+#### Sidebar User Menu
 
 ```mermaid
 graph TD
-    D[main - Chat Area] --> D1[ollama-chat-container]
-    
+    SU[ollama-sidebar-user] --> SD[ollama-dropdown]
+    SD --> SI[Menu Items]
+    SI --> SP[ollama-settings-panel]
+    SP --> SD1[ollama-dialog]
+    SD1 --> SD2[ollama-input]
+    SD1 --> SD3[ollama-select]
+    SD1 --> SD4[ollama-button]
+
+    classDef baseComponent fill:#ffd700,stroke:#333,stroke-width:2px
+    classDef featureComponent fill:#87ceeb,stroke:#333,stroke-width:2px
+
+    class SU,SP featureComponent
+    class SD,SD1,SD2,SD3,SD4 baseComponent
+```
+
+---
+
+#### Main Workspace (Chat Mode)
+
+```mermaid
+graph TD
+    D[main - Workspace] --> D1[ollama-message-list]
     D1 --> U1[ollama-user-message]
     D1 --> A1[ollama-ai-response]
-    D1 --> D9[ollama-chat-input]
+    D --> D9[ollama-chat-input]
     
     style D fill:#e1ffe1
     style U1 fill:#ffe6e6
@@ -171,6 +198,26 @@ graph TD
 ```
 
 ---
+
+#### Main Workspace (Project Mode)
+
+```mermaid
+graph TD
+    P[main - Workspace] --> P1[ollama-project-view]
+    P --> P2[ollama-live-preview]
+
+    P1 --> P3[ollama-file-tree]
+    P1 --> P4[ollama-file-display]
+    P1 --> P5[ollama-button - Download]
+
+    style P fill:#e1ffe1
+
+    classDef baseComponent fill:#ffd700,stroke:#333,stroke-width:2px
+    classDef featureComponent fill:#87ceeb,stroke:#333,stroke-width:2px
+
+    class P1,P2,P3,P4 featureComponent
+    class P5 baseComponent
+```
 
 #### User Message Component
 
@@ -225,32 +272,31 @@ graph TD
 ```mermaid
 graph TD
     D9[ollama-chat-input] --> D10[ollama-textarea]
-    D9 --> D13[ollama-input-actions - Action Bar]
+    D9 --> D11[ollama-button - Image Upload]
+    D9 --> D14[ollama-button - File Upload]
+    D9 --> D16[ollama-select - Model]
     D9 --> D12[ollama-button - Send]
-    
-    D13 --> D11[ollama-button - Image Upload]
-    D13 --> D14[ollama-button - File Upload]
-    D13 --> D15[ollama-button - Future: MCP Tools]
     
     D11 --> I1[ollama-icon]
     D11 --> I2[ollama-tooltip]
     D14 --> I3[ollama-icon]
     D14 --> I4[ollama-tooltip]
+    D12 --> I5[ollama-icon]
     
     classDef baseComponent fill:#ffd700,stroke:#333,stroke-width:2px
     classDef featureComponent fill:#87ceeb,stroke:#333,stroke-width:2px
     
-    class D9,D13 featureComponent
-    class D10,D11,D12,D14,D15,I1,I2,I3,I4 baseComponent
+    class D9 featureComponent
+    class D10,D11,D12,D14,D16,I1,I2,I3,I4,I5 baseComponent
 ```
 
 ---
 
-#### Footer Section
+#### Footer Section (Chat Mode)
 
 ```mermaid
 graph TD
-    E[footer] --> E1[ollama-token-counter]
+    E[footer - Chat Input] --> E1[ollama-chat-input]
     
     style E fill:#f5e1ff
     
@@ -297,9 +343,13 @@ graph TD
 | `<ollama-dialog>` | Container | All modal dialogs and popups |
 | `<ollama-input>` | Leaf | All text inputs |
 | `<ollama-textarea>` | Leaf | Multi-line text input |
+| `<ollama-text>` | Leaf | All typography and labels (theme-aware text styles) |
 | `<ollama-icon>` | Leaf | All icons (wraps Lucide icons) |
 | `<ollama-tooltip>` | Leaf | All tooltips |
 | `<ollama-select>` | Leaf | All dropdowns/selects |
+| `<ollama-dropdown>` | Leaf | Menus and popover lists (e.g., user menu) |
+| `<ollama-avatar>` | Leaf | User avatar (image or initials) |
+| `<ollama-toggle-switch>` | Leaf | Icon toggle switch (chat vs project) |
 | `<ollama-spinner>` | Leaf | Loading indicators |
 | `<ollama-badge>` | Leaf | Labels, tags, status indicators |
 | `<ollama-error-toast>` | Experience | Floating toast notifications with dismiss and action buttons |
@@ -308,28 +358,28 @@ graph TD
 | **Feature Components** (src/components/features/) - Chat-specific |
 | `<ollama-chat-container>` | Container | Main chat layout wrapper, holds all chat UI |
 | `<ollama-chat-message>` | Container | Individual message wrapper (delegates to user-message or ai-response) |
+| `<ollama-message-list>` | Container | Message list with empty state and auto-scroll |
 | `<ollama-user-message>` | Experience | User message bubble with actions (constrained width, bubble style) |
 | `<ollama-ai-response>` | Experience | AI response with markdown, code blocks, streaming (full-width, no bubble) |
 | `<ollama-markdown-renderer>` | Experience | Live markdown rendering during streaming, delegates to code-block |
 | `<ollama-code-block>` | Experience | Collapsible code display with header and syntax-highlighted content |
 | `<ollama-code-header>` | Experience | Code block header (file icon, extension badge, line count, expand/collapse button) |
 | `<ollama-chat-input>` | Experience | Message compose area with textarea, action bar, and send button |
-| `<ollama-input-actions>` | Experience | Action button bar below textarea (image upload, file upload, future MCP tools) |
 | `<ollama-conversation-list>` | Container | Sidebar list of conversations, holds conversation-item components |
 | `<ollama-conversation-item>` | Experience | Single conversation in list with badge, title, and metadata |
 | `<ollama-model-selector>` | Experience | Dropdown to select active LLM model (uses select + icon) |
 | `<ollama-model-badge>` | Leaf | Visual indicator showing which model was used for a message |
-| `<ollama-token-counter>` | Leaf | Display token usage stats (read-only display) |
 | `<ollama-streaming-indicator>` | Leaf | Visual feedback during streaming responses (animated indicator) |
-| `<ollama-message-actions>` | Experience | Action buttons for messages (copy, regenerate, delete with icons and tooltips) |
+| `<ollama-message-actions>` | Experience | Action buttons for messages (copy, regenerate with icons and tooltips) |
 | `<ollama-settings-panel>` | Experience | Settings dialog with inputs, selects, and theme options |
 | `<ollama-theme-toggle>` | Experience | Light/dark theme switcher (button with icon) |
 | `<ollama-language-selector>` | Experience | Language/locale picker (select with flag icons) |
 | `<ollama-project-view>` | Experience | Project display with metadata, file tree, and download button |
 | `<ollama-file-tree>` | Experience | Hierarchical file structure with collapsible directories |
 | `<ollama-file-display>` | Experience | File content with syntax highlighting, streaming support, and copy button |
-| `<ollama-preview-panel>` | Experience | Sandboxed iframe preview with controls and error display |
+| `<ollama-live-preview>` | Experience | Sandboxed iframe preview with controls and error display |
 | `<ollama-export-button>` | Leaf | Project download button with loading state and file size |
+| `<ollama-sidebar-user>` | Experience | Sticky sidebar user card with dropdown actions |
 
 **Component Type Definitions**:
 - **Leaf**: Single-purpose component with no child components (button, icon, input, badge)
@@ -360,6 +410,8 @@ graph TD
 - Icon buttons MUST use `<ollama-button variant="icon">` with `<ollama-icon>` child
 - ALL icon-only buttons MUST have `<ollama-tooltip>` for accessibility and discoverability
 - Tooltips MUST appear on hover and focus
+- Do NOT use native `title` attributes for UI tooltips; only `<ollama-tooltip>` is allowed
+- Tooltip positioning MUST avoid covering the trigger control (use auto positioning or bottom placement when near the top edge)
 - Common actions (delete, edit, copy, send, etc.) SHOULD use icons only
 - Text labels SHOULD be used only for primary CTAs or uncommon actions
 - Icon choice MUST be semantically obvious (use common conventions)
@@ -367,9 +419,9 @@ graph TD
 **Example Pattern**:
 ```html
 <!-- Good: Icon with tooltip -->
-<ollama-button variant="icon" aria-label="Delete message">
-  <ollama-icon name="trash-2"></ollama-icon>
-  <ollama-tooltip>Delete message</ollama-tooltip>
+<ollama-button variant="icon" aria-label="Copy message">
+  <ollama-icon name="copy"></ollama-icon>
+  <ollama-tooltip>Copy message</ollama-tooltip>
 </ollama-button>
 
 <!-- Bad: Icon with redundant text -->
@@ -2475,7 +2527,7 @@ describe('ollama-button', () => {
 
 *Component* (`src/components/features/`):
 
-**`<ollama-preview-panel>`** (Experience Component):
+**`<ollama-live-preview>`** (Experience Component):
 - Contains sandboxed iframe for rendering generated apps
 - Shows preview controls (refresh, open in new tab, toggle console)
 - Displays error messages from iframe
@@ -2908,9 +2960,10 @@ make health          # Check if all services running
 ### Component Design Principles
 - **Consistency Over Customization**: Reuse existing components even if slightly imperfect
 - **Justify New Components**: Document why existing components cannot be extended/reused
+- **Base Components First**: Feature components MUST compose from base primitives (button, input, select, icon, tooltip, text). Do not introduce raw HTML controls unless a base component cannot support the requirement.
 - **Visual Unity**: All dialogs look the same, all buttons behave the same, all inputs share styles
 - **Theme Integration**: All components MUST respect CSS custom properties for colors, spacing, typography
-- **Icon-First**: Use icon + tooltip pattern for common actions to reduce visual clutter
+- **Icon-First**: Use icon + tooltip pattern for common actions to reduce visual clutter. Tooltips must use `<ollama-tooltip>` and auto-position away from the trigger to avoid overlap.
 - **RTL-First Design**: All layouts MUST work in both LTR and RTL without code changes
 - **Compact UI**: Default to tight spacing (--spacing-sm, --spacing-md) for information density; use larger spacing (--spacing-lg, --spacing-xl) sparingly for major separations only
 
@@ -2995,3 +3048,39 @@ border-end-end-radius      (NOT border-bottom-right-radius)
 5. Add translated strings to locale files
 6. Test in Docker container
 7. Create PR to merge back to `main`
+
+---
+
+## Implemented Features
+
+This section tracks completed feature implementations. Each feature has detailed documentation in `docs/features/`.
+
+### ✅ F-00: Basic Project Setup
+**Status**: Complete  
+**Completed**: 2026-01-02  
+**Documentation**: [docs/features/00-basic-project-setup.md](features/00-basic-project-setup.md)
+
+**Summary**:
+- Docker Compose with 3 services (frontend nginx, backend Node.js, Ollama)
+- WebSocket server with SQLite database initialization
+- Complete project structure (src/frontend, src/backend, src/shared, build/)
+- Makefile with 25+ development commands
+- All infrastructure validated and working
+
+**Success Criteria**: 7/7 complete
+- Docker configuration, Makefile, WebSocket server, database schema, health checks, setup process
+
+---
+
+### Feature Documentation Template
+
+When implementing new features, create a feature document in `docs/features/` following this structure:
+
+1. **Metadata**: Feature ID, Status, Dates, Dependencies
+2. **Target Requirements**: Link to FR/DR requirements from specification.md and development.md
+3. **Success Criteria**: Checkboxes for acceptance criteria
+4. **Implementation Plan**: Phases and steps
+5. **Implementation Notes**: Technical decisions and considerations
+6. **Change Log**: Dated entries by AI agent with work summary
+
+See `docs/features/00-basic-project-setup.md` for a complete example.
