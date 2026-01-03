@@ -192,6 +192,12 @@ None directly - foundational UI infrastructure
 
 ## Change Log
 
+### 2026-01-04 - Mode Toggle + App Shell Switch
+**Agent**: Codex (GPT-5)
+- Added base `<ollama-toggle-switch>` for icon-based mode toggles.
+- Updated the App Shell story to switch between chat and project modes, showing project view + preview in project mode.
+- Documented the toggle component in the base reference.
+
 ### 2026-01-04 - Live Preview Component
 **Agent**: Codex (GPT-5)
 - Implemented `<ollama-live-preview>` with sandboxed iframe, reload control, and error overlay.

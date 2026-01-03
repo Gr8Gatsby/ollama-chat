@@ -65,6 +65,13 @@ class OllamaFileTree extends BaseComponent {
     } else {
       this.expandedPaths.add(path);
     }
+    this.setAttribute(
+      "expanded",
+      JSON.stringify(Array.from(this.expandedPaths)),
+    );
+    this.emit("expanded-change", {
+      expanded: Array.from(this.expandedPaths),
+    });
     this.render();
   }
 

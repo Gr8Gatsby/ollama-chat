@@ -24,6 +24,7 @@ class OllamaProjectView extends BaseComponent {
 
   constructor() {
     super();
+    this.expanded = this.getAttribute("expanded") || "[]";
     this.render();
   }
 
@@ -42,6 +43,10 @@ class OllamaProjectView extends BaseComponent {
           this.setAttribute("selected-path", path);
           this.emit("file-selected", { path });
         }
+      });
+      fileTree.addEventListener("expanded-change", (event) => {
+        const expanded = event.detail?.expanded || [];
+        this.expanded = JSON.stringify(expanded);
       });
     }
 
@@ -64,6 +69,7 @@ class OllamaProjectView extends BaseComponent {
     const fileSize = this.getAttribute("file-size") || "";
     const fileLines = this.getAttribute("file-lines") || "";
     const loading = this.hasAttribute("loading");
+    const expanded = this.expanded || "[]";
 
     this.shadowRoot.innerHTML = `
       <style>
@@ -78,21 +84,11 @@ class OllamaProjectView extends BaseComponent {
         .layout {
           display: grid;
           grid-template-columns: 280px 1fr;
-          grid-template-rows: auto 1fr;
+          grid-template-rows: 1fr;
           height: 100%;
           border: 1px solid var(--color-border);
           border-radius: var(--radius-lg);
           overflow: hidden;
-        }
-
-        .header {
-          grid-column: 1 / -1;
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          padding: var(--spacing-sm) var(--spacing-md);
-          border-bottom: 1px solid var(--color-border);
-          background: var(--color-bg-primary);
         }
 
         .meta {
@@ -110,6 +106,20 @@ class OllamaProjectView extends BaseComponent {
           padding: var(--spacing-sm);
           background: var(--color-bg-secondary);
           overflow: auto;
+          display: flex;
+          flex-direction: column;
+          gap: var(--spacing-sm);
+        }
+
+        .project-card {
+          background: var(--color-bg-primary);
+          border: 1px solid var(--color-border);
+          border-radius: var(--radius-md);
+          padding: var(--spacing-sm);
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: var(--spacing-sm);
         }
 
         .main {
@@ -124,30 +134,29 @@ class OllamaProjectView extends BaseComponent {
         }
       </style>
       <div class="layout" part="layout">
-        <header class="header" part="header">
-          <div class="meta">
-            <ollama-text variant="title" size="md" weight="semibold">
-              ${name}
-            </ollama-text>
-            ${
-              description
-                ? `<ollama-text variant="caption" color="muted">${description}</ollama-text>`
-                : ""
-            }
-          </div>
-          <div class="meta align-end">
-            ${fileCount ? `<ollama-text variant="caption" color="muted">${fileCount} files</ollama-text>` : ""}
-            <ollama-button class="download-button" variant="icon" aria-label="Download project">
-              <ollama-icon name="download"></ollama-icon>
-              <ollama-tooltip>Download</ollama-tooltip>
-            </ollama-button>
-          </div>
-        </header>
         <aside class="aside" part="file-tree">
+          <div class="project-card" part="project-card">
+            <div class="meta">
+              <ollama-text variant="label">${name}</ollama-text>
+              ${
+                description
+                  ? `<ollama-text variant="caption" color="muted">${description}</ollama-text>`
+                  : ""
+              }
+            </div>
+            <div class="meta align-end">
+              ${fileCount ? `<ollama-text variant="caption" color="muted">${fileCount} files</ollama-text>` : ""}
+              <ollama-button class="download-button" variant="icon" aria-label="Download project">
+                <ollama-icon name="download"></ollama-icon>
+                <ollama-tooltip>Download</ollama-tooltip>
+              </ollama-button>
+            </div>
+          </div>
           <slot name="file-tree">
             <ollama-file-tree
               tree='${this.escapeAttribute(tree)}'
               selected="${selectedPath}"
+              expanded='${this.escapeAttribute(expanded)}'
             ></ollama-file-tree>
           </slot>
         </aside>

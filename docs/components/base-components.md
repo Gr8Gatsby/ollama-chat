@@ -59,6 +59,12 @@ Comprehensive reference for the `src/frontend/components/base/` library used acr
 - **Events**: `copy` with `{ code, failed }`.
 - **Accessibility**: Uses icon-only copy button with tooltip; code uses monospaced font and syntax highlighting.
 
+## `<ollama-toggle-switch>`
+- **Purpose**: Compact icon toggle for switching between two modes (e.g., chat vs project).
+- **Attributes**: `value` (`left` | `right`), `left-label`, `right-label`.
+- **Events**: `change` with `{ value }`.
+- **Accessibility**: Uses `role="tablist"`/`tab` semantics and tooltips for icon labels.
+
 ## `<ollama-tooltip>`
 - **Purpose**: Focus/hover tooltip for icon-first UI.
 - **Attributes**: `position` (`auto|top|top-right|right|bottom|bottom-left|bottom-right|left`).

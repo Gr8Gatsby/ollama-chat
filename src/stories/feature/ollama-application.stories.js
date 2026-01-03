@@ -7,104 +7,140 @@ import "../../frontend/components/features/ollama-message-list.js";
 import "../../frontend/components/features/ollama-user-message.js";
 import "../../frontend/components/features/ollama-ai-response.js";
 import "../../frontend/components/features/ollama-live-preview.js";
+import "../../frontend/components/features/ollama-project-view.js";
+import "../../frontend/components/features/ollama-sidebar-user.js";
 import "../../frontend/components/base/ollama-button.js";
 import "../../frontend/components/base/ollama-icon.js";
 import "../../frontend/components/base/ollama-text.js";
 import "../../frontend/components/base/ollama-tooltip.js";
+import "../../frontend/components/base/ollama-toggle-switch.js";
 
 class AppShellPreviewDemo extends HTMLElement {
   constructor() {
     super();
-    this.previewOpen = false;
+    this.mode = "chat";
+    this.sidebarOpen = true;
+    this.projectExpanded =
+      '["my-project","my-project/src","my-project/styles"]';
+    this.projectSelected = "src/app.js";
   }
 
   connectedCallback() {
     this.render();
   }
 
-  togglePreview(forceState) {
-    this.previewOpen =
-      typeof forceState === "boolean" ? forceState : !this.previewOpen;
+  setMode(next) {
+    this.mode = next;
     this.render();
   }
 
   attachListeners() {
-    const openButton = this.querySelector(".preview-open");
-    if (openButton) {
-      openButton.onclick = () => this.togglePreview(true);
+    const toggle = this.querySelector("ollama-toggle-switch");
+    if (toggle) {
+      toggle.addEventListener("change", (event) => {
+        const value = event.detail?.value;
+        this.setMode(value === "right" ? "project" : "chat");
+      });
     }
 
-    const closeButton = this.querySelector(".preview-close");
-    if (closeButton) {
-      closeButton.onclick = () => this.togglePreview(false);
+    const container = this.querySelector("ollama-chat-container");
+    if (container) {
+      container.addEventListener("sidebar-toggle", (event) => {
+        const open = event.detail?.open;
+        this.sidebarOpen = Boolean(open);
+      });
+    }
+
+    const projectView = this.querySelector("ollama-project-view");
+    if (projectView) {
+      projectView.addEventListener("file-selected", (event) => {
+        this.projectSelected = event.detail?.path || this.projectSelected;
+      });
+      projectView.addEventListener("expanded-change", (event) => {
+        const expanded = event.detail?.expanded || [];
+        this.projectExpanded = JSON.stringify(expanded);
+      });
     }
   }
 
   render() {
+    const showProject = this.mode === "project";
     this.innerHTML = `
-      <ollama-chat-container sidebar-open>
-        <nav slot="sidebar" aria-label="Conversations" style="padding: 16px;">
-          <ollama-text variant="title" size="md" weight="semibold">
-            Sidebar
-          </ollama-text>
-          <div style="margin: 12px 0;">
-            <ollama-button variant="secondary">New Chat</ollama-button>
+      <ollama-chat-container ${
+        !showProject && this.sidebarOpen ? "sidebar-open" : ""
+      }>
+        <nav
+          slot="sidebar"
+          aria-label="Conversations"
+          style="display: flex; flex-direction: column; gap: 16px; height: 100%;"
+        >
+          <div style="padding: 16px; display: flex; flex-direction: column; gap: 16px;">
+            <ollama-text variant="title" size="md" weight="semibold">
+              Sidebar
+            </ollama-text>
+            <div style="margin: 12px 0;">
+              <ollama-button variant="secondary">New Chat</ollama-button>
+            </div>
+            <ollama-conversation-list>
+              <ollama-conversation-item
+                conversation-id="conv-1"
+                conversation-title="Project kickoff"
+                preview="Outline milestones and action items"
+                model="llama3"
+                timestamp="2h ago"
+                unread-count="2"
+                selected
+              ></ollama-conversation-item>
+              <ollama-conversation-item
+                conversation-id="conv-2"
+                conversation-title="Design review"
+                preview="Summarize visual polish requests"
+                model="mistral"
+                timestamp="Yesterday"
+              ></ollama-conversation-item>
+            </ollama-conversation-list>
           </div>
-          <ollama-conversation-list>
-            <ollama-conversation-item
-              conversation-id="conv-1"
-              conversation-title="Project kickoff"
-              preview="Outline milestones and action items"
-              model="llama3"
-              timestamp="2h ago"
-              unread-count="2"
-              selected
-            ></ollama-conversation-item>
-            <ollama-conversation-item
-              conversation-id="conv-2"
-              conversation-title="Design review"
-              preview="Summarize visual polish requests"
-              model="mistral"
-              timestamp="Yesterday"
-            ></ollama-conversation-item>
-          </ollama-conversation-list>
+          <div style="margin-top: auto;">
+            <ollama-sidebar-user
+              name="Kevin Hill"
+              logged-in
+            ></ollama-sidebar-user>
+          </div>
         </nav>
-        <header slot="header" aria-label="Chat header">
-          <ollama-text variant="title" size="md" weight="semibold">
-            Chat Header
-          </ollama-text>
-        </header>
+        <header slot="header" aria-label="App bar"></header>
         <div slot="header-controls" aria-label="Header controls">
-          <ollama-button variant="icon" aria-label="Search">
-            <ollama-icon name="search"></ollama-icon>
-            <ollama-tooltip>Search</ollama-tooltip>
-          </ollama-button>
-          <ollama-button variant="icon" aria-label="Settings">
-            <ollama-icon name="settings"></ollama-icon>
-            <ollama-tooltip>Settings</ollama-tooltip>
-          </ollama-button>
+          <ollama-toggle-switch
+            value="${showProject ? "right" : "left"}"
+            left-label="Chat"
+            right-label="Project"
+          ></ollama-toggle-switch>
         </div>
         <main slot="main" aria-label="Chat messages" style="height: 100%;">
           ${
-            this.previewOpen
+            showProject
               ? `
               <div style="position: relative; height: 100%;">
-                <ollama-live-preview
-                  title="Preview"
-                  srcdoc='<!doctype html><html><body style="font-family: system-ui; padding: 24px;"><h2>Live preview</h2><p>Full preview replaces chat content.</p></body></html>'
-                ></ollama-live-preview>
-                <div style="position: absolute; top: 12px; right: 12px;">
-                  <ollama-button class="preview-close" variant="icon" aria-label="Close preview">
-                    <ollama-icon name="x" size="xs"></ollama-icon>
-                    <ollama-tooltip>Close preview</ollama-tooltip>
-                  </ollama-button>
+                <ollama-project-view
+                  project-name="Demo Project"
+                  description="Generated by Ollama Chat"
+                  file-count="4"
+                  selected-path="${this.projectSelected}"
+                  file-language="js"
+                  file-size="1.2 KB"
+                  file-lines="24"
+                  file-content="const greeting = 'Hello';\nconsole.log(greeting);\n"
+                  expanded='${this.projectExpanded}'
+                  tree='{"name":"my-project","type":"directory","children":[{"name":"index.html","type":"file","path":"index.html"},{"name":"styles","type":"directory","children":[{"name":"main.css","type":"file","path":"styles/main.css"}]},{"name":"src","type":"directory","children":[{"name":"app.js","type":"file","path":"src/app.js"},{"name":"data.json","type":"file","path":"src/data.json"}]}]}'
+                ></ollama-project-view>
+                <div style="margin-top: 12px; height: 240px;">
+                  <ollama-live-preview
+                    title="Preview"
+                    srcdoc='<!doctype html><html><body style="font-family: system-ui; padding: 24px;"><h2>Live preview</h2><p>Project preview area.</p></body></html>'
+                  ></ollama-live-preview>
                 </div>
               </div>
               `
               : `
-              <div style="padding: 12px 16px 0;">
-                <ollama-button class="preview-open" variant="secondary">Preview</ollama-button>
-              </div>
               <ollama-message-list auto-scroll>
                 <ollama-user-message
                   content="Can you draft the first milestone summary? Make it short and clear."
@@ -124,7 +160,7 @@ class AppShellPreviewDemo extends HTMLElement {
           }
         </main>
         ${
-          this.previewOpen
+          showProject
             ? ""
             : `
           <footer
