@@ -192,6 +192,18 @@ None directly - foundational UI infrastructure
 
 ## Change Log
 
+### 2026-01-04 - Markdown + Code Block Rendering
+**Agent**: Codex (GPT-5)
+- Added base `<ollama-code-block>` with copy action and monospace styling.
+- Implemented `<ollama-markdown-renderer>` to parse fenced code blocks and render text paragraphs.
+- Wired AI responses to render markdown content and added Storybook coverage/documentation updates.
+
+### 2026-01-04 - Message List Added
+**Agent**: Codex (GPT-5)
+- Implemented `<ollama-message-list>` to provide a scrollable message stack with empty state and auto-scroll.
+- Added Storybook coverage and updated the App Shell to use the message list container.
+- Documented the component API in the base reference.
+
 ### 2026-01-04 - Settings Panel + Dialog
 **Agent**: Codex (GPT-5)
 - Implemented base `<ollama-dialog>` with focus trapping, dismissible behavior, and header/footer slots.

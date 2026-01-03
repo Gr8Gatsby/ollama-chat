@@ -3,6 +3,7 @@ import "../../frontend/components/features/ollama-chat-container.js";
 import "../../frontend/components/features/ollama-conversation-list.js";
 import "../../frontend/components/features/ollama-conversation-item.js";
 import "../../frontend/components/features/ollama-chat-input.js";
+import "../../frontend/components/features/ollama-message-list.js";
 import "../../frontend/components/features/ollama-user-message.js";
 import "../../frontend/components/features/ollama-ai-response.js";
 import "../../frontend/components/base/ollama-button.js";
@@ -60,8 +61,8 @@ export const AppShell = () => html`
         <ollama-tooltip>Settings</ollama-tooltip>
       </ollama-button>
     </div>
-    <main slot="main" aria-label="Chat messages" style="padding: 16px;">
-      <div style="display: flex; flex-direction: column; gap: 16px;">
+    <main slot="main" aria-label="Chat messages">
+      <ollama-message-list auto-scroll>
         <ollama-user-message
           content="Can you draft the first milestone summary? Make it short and clear."
           timestamp="2m ago"
@@ -75,7 +76,7 @@ export const AppShell = () => html`
           tokens="512"
           streaming
         ></ollama-ai-response>
-      </div>
+      </ollama-message-list>
     </main>
     <footer
       slot="footer"

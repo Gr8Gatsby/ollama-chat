@@ -4,6 +4,7 @@ import "../base/ollama-spinner.js";
 import "../base/ollama-text.js";
 import "../base/ollama-tooltip.js";
 import "./ollama-message-actions.js";
+import "./ollama-markdown-renderer.js";
 
 class OllamaAiResponse extends BaseComponent {
   static get observedAttributes() {
@@ -61,7 +62,9 @@ class OllamaAiResponse extends BaseComponent {
       <div class="response" part="response">
         <div class="content" part="content">
           <slot>
-            <ollama-text>${content}</ollama-text>
+            <ollama-markdown-renderer content="${this.escapeAttribute(
+              content,
+            )}"></ollama-markdown-renderer>
           </slot>
         </div>
         <div class="meta" part="meta">
@@ -89,6 +92,10 @@ class OllamaAiResponse extends BaseComponent {
         </div>
       </div>
     `;
+  }
+
+  escapeAttribute(value) {
+    return String(value).replace(/"/g, "&quot;");
   }
 }
 

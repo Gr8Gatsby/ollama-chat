@@ -158,6 +158,13 @@ class OllamaDialog extends BaseComponent {
           gap: var(--spacing-md);
         }
 
+        .header h2 {
+          font-family: var(--font-family);
+          font-size: var(--font-size-lg);
+          font-weight: 600;
+          margin: 0;
+        }
+
         .body {
           display: flex;
           flex-direction: column;
@@ -190,12 +197,16 @@ class OllamaDialog extends BaseComponent {
               ${title ? `<h2 id="dialog-title">${title}</h2>` : ""}
             </slot>
           </div>
-          ${dismissible ? `
+          ${
+            dismissible
+              ? `
             <ollama-button class="close-button" variant="icon" aria-label="Close">
               <ollama-icon name="x"></ollama-icon>
               <ollama-tooltip>Close</ollama-tooltip>
             </ollama-button>
-          ` : ""}
+          `
+              : ""
+          }
         </div>
         <div class="body">
           <slot></slot>

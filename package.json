@@ -26,5 +26,8 @@
     "lit": "^3.3.2",
     "playwright": "^1.57.0",
     "@vitest/browser-playwright": "^4.0.16"
+  },
+  "dependencies": {
+    "prismjs": "^1.29.0"
   }
 }

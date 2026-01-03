@@ -53,6 +53,12 @@ Comprehensive reference for the `src/frontend/components/base/` library used acr
 - **Events**: `open`, `close`.
 - **Accessibility**: `role="dialog"` + `aria-modal="true"`, Escape closes when `dismissible` is set.
 
+## `<ollama-code-block>`
+- **Purpose**: Formatted code snippet with copy action.
+- **Attributes**: `language`, `code`.
+- **Events**: `copy` with `{ code, failed }`.
+- **Accessibility**: Uses icon-only copy button with tooltip; code uses monospaced font and syntax highlighting.
+
 ## `<ollama-tooltip>`
 - **Purpose**: Focus/hover tooltip for icon-first UI.
 - **Attributes**: `position` (`auto|top|top-right|right|bottom|bottom-left|bottom-right|left`).
@@ -97,6 +103,12 @@ Comprehensive reference for the `src/frontend/components/base/` library used acr
 - **Slots**: `actions` slot for message controls.
 - **Accessibility**: Full-width layout with optional streaming indicator and metadata badges.
 
+### `<ollama-markdown-renderer>`
+- **Purpose**: Render markdown-like content with fenced code blocks.
+- **Attributes**: `content`.
+- **Behavior**: Parses fenced code blocks into `<ollama-code-block>` elements and supports headings, lists, blockquotes, links, bold/italic, and inline code.
+- **Accessibility**: Uses `<ollama-text>` for readable body copy.
+
 ### `<ollama-message-actions>`
 - **Purpose**: Icon-first action bar for messages (copy, regenerate, delete).
 - **Attributes**: `disabled`, `busy`, `actions` (JSON array for custom actions).
@@ -114,6 +126,12 @@ Comprehensive reference for the `src/frontend/components/base/` library used acr
 - **Attributes**: `open`, `theme`, `language`, `model`, `themes`, `languages`, `models` (JSON arrays).
 - **Events**: `settings-change` with `{ theme, language, model }`.
 - **Accessibility**: Wraps settings inside `<ollama-dialog>` with labeled selects.
+
+### `<ollama-message-list>`
+- **Purpose**: Scrollable container for chat messages with optional auto-scroll.
+- **Attributes**: `auto-scroll`, `empty-text`.
+- **Slots**: Default slot for `<ollama-chat-message>`, `<ollama-user-message>`, and `<ollama-ai-response>` children.
+- **Accessibility**: Empty state text is screen-reader visible; container is scrollable.
 
 ### `<ollama-conversation-list>`
 - **Purpose**: Sidebar list container for conversation navigation.
