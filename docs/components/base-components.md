@@ -133,6 +133,30 @@ Comprehensive reference for the `src/frontend/components/base/` library used acr
 - **Slots**: Default slot for `<ollama-chat-message>`, `<ollama-user-message>`, and `<ollama-ai-response>` children.
 - **Accessibility**: Empty state text is screen-reader visible; container is scrollable.
 
+### `<ollama-project-view>`
+- **Purpose**: Project explorer layout with metadata header, file tree, and file display.
+- **Attributes**: `project-name`, `description`, `file-count`, `tree`, `selected-path`, `file-content`, `file-language`, `file-size`, `file-lines`, `loading`.
+- **Events**: `file-selected`, `project-download`.
+- **Accessibility**: Uses semantic header and labeled controls; file tree is keyboard selectable.
+
+### `<ollama-file-tree>`
+- **Purpose**: Hierarchical file navigation with expandable directories.
+- **Attributes**: `tree` (JSON), `selected`, `expanded` (JSON array).
+- **Events**: `file-selected` with `{ path }`.
+- **Accessibility**: `role="tree"` with `treeitem` nodes, highlights selection.
+
+### `<ollama-file-display>`
+- **Purpose**: File content viewer with syntax highlighting and copy action.
+- **Attributes**: `path`, `content`, `language`, `size`, `lines`, `loading`.
+- **Events**: `copy-file` with `{ content, failed }`.
+- **Accessibility**: Copy action is icon-only with tooltip; content uses readable monospace styling.
+
+### `<ollama-live-preview>`
+- **Purpose**: Sandboxed iframe preview for generated projects.
+- **Attributes**: `title`, `srcdoc`, `error`.
+- **Events**: `preview-reload`.
+- **Accessibility**: Uses labeled iframe with reload control; error overlay announces issues.
+
 ### `<ollama-conversation-list>`
 - **Purpose**: Sidebar list container for conversation navigation.
 - **Attributes**: `empty-title`, `empty-description`, `aria-label`.

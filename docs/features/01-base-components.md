@@ -192,6 +192,17 @@ None directly - foundational UI infrastructure
 
 ## Change Log
 
+### 2026-01-04 - Live Preview Component
+**Agent**: Codex (GPT-5)
+- Implemented `<ollama-live-preview>` with sandboxed iframe, reload control, and error overlay.
+- Added Storybook coverage and documented the component API.
+
+### 2026-01-04 - File Display Components Added
+**Agent**: Codex (GPT-5)
+- Implemented `<ollama-project-view>`, `<ollama-file-tree>`, and `<ollama-file-display>` with syntax highlighting and copy actions.
+- Added Storybook coverage for project view, file tree, and file display.
+- Documented the file display components in the base reference.
+
 ### 2026-01-04 - Markdown + Code Block Rendering
 **Agent**: Codex (GPT-5)
 - Added base `<ollama-code-block>` with copy action and monospace styling.

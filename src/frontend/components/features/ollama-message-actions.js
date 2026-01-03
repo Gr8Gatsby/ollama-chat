@@ -25,7 +25,6 @@ class OllamaMessageActions extends BaseComponent {
       return [
         { id: "copy", icon: "copy", label: "Copy" },
         { id: "regenerate", icon: "refresh-cw", label: "Regenerate" },
-        { id: "delete", icon: "trash-2", label: "Delete" },
       ];
     }
     try {

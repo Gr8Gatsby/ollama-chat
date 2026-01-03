@@ -167,6 +167,8 @@ class OllamaMarkdownRenderer extends BaseComponent {
         :host {
           display: block;
           width: 100%;
+          font-family: var(--font-family);
+          color: var(--color-text-primary);
         }
 
         .paragraph {
@@ -199,6 +201,7 @@ class OllamaMarkdownRenderer extends BaseComponent {
           margin: 0 0 var(--spacing-sm);
           padding-inline-start: var(--spacing-lg);
           color: var(--color-text-primary);
+          font-family: var(--font-family);
         }
 
         blockquote {
@@ -206,6 +209,7 @@ class OllamaMarkdownRenderer extends BaseComponent {
           padding-inline-start: var(--spacing-md);
           border-inline-start: 3px solid var(--color-border);
           color: var(--color-text-secondary);
+          font-family: var(--font-family);
         }
 
         a {

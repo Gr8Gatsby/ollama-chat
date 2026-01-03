@@ -39,7 +39,9 @@ class OllamaMessageList extends BaseComponent {
   }
 
   updateEmptyState() {
-    const hasMessages = this.querySelector("ollama-chat-message");
+    const hasMessages = this.querySelector(
+      "ollama-chat-message, ollama-user-message, ollama-ai-response",
+    );
     const empty = this.shadowRoot?.querySelector(".empty-state");
     if (empty) {
       empty.hidden = Boolean(hasMessages);
@@ -55,7 +57,8 @@ class OllamaMessageList extends BaseComponent {
 
   render() {
     const emptyText =
-      this.getAttribute("empty-text") || "Start a conversation to see messages.";
+      this.getAttribute("empty-text") ||
+      "Start a conversation to see messages.";
 
     this.shadowRoot.innerHTML = `
       <style>

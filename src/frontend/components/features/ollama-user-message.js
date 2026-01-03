@@ -53,9 +53,25 @@ class OllamaUserMessage extends BaseComponent {
 
         .meta {
           display: inline-flex;
-          align-items: center;
+          align-items: baseline;
           gap: var(--spacing-xs);
           color: var(--color-text-secondary);
+        }
+
+        .meta > * {
+          align-self: baseline;
+        }
+
+        .token-badge {
+          display: inline-flex;
+          align-items: center;
+          gap: var(--spacing-xxs, 2px);
+        }
+
+        .meta ::slotted(ollama-message-actions) {
+          align-self: baseline;
+          position: relative;
+          top: 4px;
         }
       </style>
       <div class="row">
