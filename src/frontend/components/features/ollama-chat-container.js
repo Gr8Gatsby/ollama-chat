@@ -5,7 +5,7 @@ import "../base/ollama-tooltip.js";
 
 class OllamaChatContainer extends BaseComponent {
   static get observedAttributes() {
-    return ["sidebar-open"];
+    return ["sidebar-open", "mode"];
   }
 
   constructor() {
@@ -105,12 +105,28 @@ class OllamaChatContainer extends BaseComponent {
           display: inline-flex;
           align-items: center;
           gap: var(--spacing-sm);
+          min-width: 0;
+        }
+
+        .header-actions {
+          display: inline-flex;
+          align-items: center;
+          gap: var(--spacing-sm);
+        }
+
+        .header-title {
+          flex: 1;
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          text-align: center;
         }
 
         .header-controls {
           display: inline-flex;
           align-items: center;
           gap: var(--spacing-sm);
+          min-width: 0;
         }
 
         .sidebar-toggle {
@@ -182,16 +198,11 @@ class OllamaChatContainer extends BaseComponent {
         <header class="header" part="header">
           <div class="header-inner">
             <div class="header-left">
-              <ollama-button
-                class="sidebar-toggle"
-                variant="icon"
-                aria-label="Toggle sidebar"
-                aria-expanded="${this.sidebarOpen ? "true" : "false"}"
-                aria-controls="ollama-sidebar-panel"
-              >
-                <ollama-icon name="panel-left"></ollama-icon>
-                <ollama-tooltip>Toggle sidebar</ollama-tooltip>
-              </ollama-button>
+              <div class="header-actions">
+                <slot name="header-actions"></slot>
+              </div>
+            </div>
+            <div class="header-title">
               <slot name="header"></slot>
             </div>
             <div class="header-controls">

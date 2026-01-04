@@ -39,6 +39,7 @@ export class OllamaButton extends BaseComponent {
     const button = this.shadowRoot.querySelector("button");
     button.addEventListener("click", (e) => {
       if (!this.getBooleanAttribute("disabled")) {
+        e.stopPropagation();
         this.emit("click", { originalEvent: e });
       }
     });
@@ -107,6 +108,17 @@ export class OllamaButton extends BaseComponent {
         button.secondary:hover:not(:disabled) {
           background: var(--color-bg-secondary);
           border-color: var(--color-border-hover);
+        }
+
+        /* Variant: Danger */
+        button.danger {
+          background: var(--color-error);
+          color: var(--color-on-accent, #ffffff);
+          padding: var(--spacing-sm) var(--spacing-md);
+        }
+
+        button.danger:hover:not(:disabled) {
+          filter: brightness(0.95);
         }
 
         /* Variant: Icon */
