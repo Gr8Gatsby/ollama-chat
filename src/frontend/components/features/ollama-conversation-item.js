@@ -2,6 +2,7 @@ import { BaseComponent } from "../base/base-component.js";
 import "../base/ollama-badge.js";
 import "../base/ollama-button.js";
 import "../base/ollama-icon.js";
+import "../base/ollama-input.js";
 import "../base/ollama-text.js";
 import "../base/ollama-tooltip.js";
 
@@ -11,22 +12,38 @@ class OllamaConversationItem extends BaseComponent {
       "conversation-id",
       "title",
       "conversation-title",
-      "preview",
-      "model",
-      "timestamp",
+      "message-count",
+      "token-count",
       "unread-count",
       "selected",
+      "editing",
+      "draft-title",
     ];
   }
 
   constructor() {
     super();
     this.suppressTitleRemove = false;
+    this.wasEditing = false;
+    this.shouldFocusRename = false;
+    this.handleDocumentClick = (event) => this.onDocumentClick(event);
     this.render();
+  }
+
+  disconnectedCallback() {
+    document.removeEventListener("mousedown", this.handleDocumentClick);
+    super.disconnectedCallback();
   }
 
   attributeChangedCallback(name, oldValue, newValue) {
     if (oldValue !== newValue) {
+      if (name === "draft-title" && this.hasAttribute("editing")) {
+        const renameInput = this.shadowRoot?.querySelector(".rename-input");
+        if (renameInput) {
+          renameInput.value = newValue || "";
+          return;
+        }
+      }
       if (name === "title" && newValue && !this.suppressTitleRemove) {
         this._title = newValue;
         this.suppressTitleRemove = true;
@@ -44,7 +61,7 @@ class OllamaConversationItem extends BaseComponent {
 
   attachEventListeners() {
     const mainButton = this.shadowRoot?.querySelector(".item-main");
-    if (mainButton) {
+    if (mainButton && !this.hasAttribute("editing")) {
       mainButton.addEventListener("click", () => this.emitSelection());
       mainButton.addEventListener("keydown", (event) => {
         if (event.key === "Enter" || event.key === " ") {
@@ -54,12 +71,53 @@ class OllamaConversationItem extends BaseComponent {
       });
     }
 
-    const actionButton = this.shadowRoot?.querySelector(".action-button");
-    if (actionButton) {
-      actionButton.addEventListener("click", (event) => {
+    const actionButtons = this.shadowRoot?.querySelectorAll(
+      ".action-button[data-action]",
+    );
+    actionButtons?.forEach((button) => {
+      button.addEventListener("click", (event) => {
         event.stopPropagation();
-        this.emitAction("menu");
+        const action = button.getAttribute("data-action");
+        if (action) {
+          this.emitAction(action);
+        }
       });
+    });
+
+    const renameInput = this.shadowRoot?.querySelector(".rename-input");
+    if (renameInput) {
+      renameInput.addEventListener("mousedown", (event) => {
+        event.stopPropagation();
+      });
+      renameInput.addEventListener("pointerdown", (event) => {
+        event.stopPropagation();
+      });
+      renameInput.addEventListener("click", (event) => {
+        event.stopPropagation();
+      });
+      renameInput.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          this.emitRenameCommit(renameInput.value);
+        }
+        if (event.key === "Escape") {
+          event.preventDefault();
+          this.emitRenameCancel();
+        }
+      });
+      renameInput.addEventListener("input", (event) => {
+        this.emitRenameDraft(event.detail?.value ?? renameInput.value);
+      });
+      this.applyLocalizationAttributes(renameInput);
+      if (this.shouldFocusRename) {
+        requestAnimationFrame(() => {
+          renameInput.focus();
+          const value = renameInput.value || "";
+          if (renameInput.setSelectionRange) {
+            renameInput.setSelectionRange(value.length, value.length);
+          }
+        });
+      }
     }
   }
 
@@ -70,17 +128,55 @@ class OllamaConversationItem extends BaseComponent {
 
   emitAction(action) {
     const id = this.getAttribute("conversation-id") || "";
+    if (action === "rename") {
+      this.emit("conversation-rename", { id });
+      return;
+    }
     this.emit("conversation-action", { id, action });
+  }
+
+  emitRenameCommit(title) {
+    const id = this.getAttribute("conversation-id") || "";
+    this.emit("conversation-rename-commit", { id, title });
+  }
+
+  emitRenameDraft(title) {
+    const id = this.getAttribute("conversation-id") || "";
+    this.emit("conversation-rename-draft", { id, title });
+  }
+
+  emitRenameCancel() {
+    const id = this.getAttribute("conversation-id") || "";
+    this.emit("conversation-rename-cancel", { id });
+  }
+
+  onDocumentClick(event) {
+    if (!this.hasAttribute("editing")) return;
+    const path = event.composedPath ? event.composedPath() : [];
+    if (path.includes(this) || path.includes(this.shadowRoot)) return;
+    this.emitRenameCancel();
+  }
+
+  updateDocumentListener(editing) {
+    if (editing) {
+      document.addEventListener("mousedown", this.handleDocumentClick);
+    } else {
+      document.removeEventListener("mousedown", this.handleDocumentClick);
+    }
   }
 
   render() {
     const title =
       this.getAttribute("conversation-title") || this._title || "Untitled chat";
-    const preview = this.getAttribute("preview") || "";
-    const model = this.getAttribute("model");
-    const timestamp = this.getAttribute("timestamp");
+    const messageCount = Number(this.getAttribute("message-count") || 0);
+    const tokenCount = Number(this.getAttribute("token-count") || 0);
     const unread = Number(this.getAttribute("unread-count") || 0);
     const selected = this.hasAttribute("selected");
+    const editing = this.hasAttribute("editing");
+    const draftTitle = this.getAttribute("draft-title") || title;
+
+    this.shouldFocusRename = editing && !this.wasEditing;
+    this.updateDocumentListener(editing);
 
     this.shadowRoot.innerHTML = `
       <style>
@@ -117,6 +213,7 @@ class OllamaConversationItem extends BaseComponent {
           display: inline-flex;
           align-items: center;
           gap: var(--spacing-xs);
+          width: 100%;
         }
 
         .title-text {
@@ -134,60 +231,94 @@ class OllamaConversationItem extends BaseComponent {
           display: inline-flex;
           align-items: center;
           gap: var(--spacing-xs);
+          opacity: 0;
+          pointer-events: none;
+          transition: opacity var(--transition-fast);
         }
 
         .action-button {
-          width: 28px;
-          height: 28px;
-          border-radius: 14px;
+          width: 24px;
+          height: 24px;
+          border-radius: 12px;
         }
 
         :host(:focus-within) .item {
           outline: 2px solid var(--color-border-focus);
           outline-offset: 2px;
         }
+
+        .item:hover .action-slot,
+        :host(:focus-within) .action-slot {
+          opacity: 1;
+          pointer-events: auto;
+        }
       </style>
       <div class="item" part="item" role="listitem">
-        <button
-          class="item-main"
-          type="button"
-          aria-pressed="${selected ? "true" : "false"}"
-        >
-          <div class="title-row">
-            <span class="title-text">
-              <ollama-text variant="label">${title}</ollama-text>
-              <ollama-tooltip position="bottom-right">${title}</ollama-tooltip>
-            </span>
-            ${unread > 0 ? `<ollama-badge size="sm">${unread}</ollama-badge>` : ""}
-          </div>
-          <div class="meta-row">
-            ${preview ? `<ollama-text variant="caption" color="muted">${preview}</ollama-text>` : ""}
-            ${
-              model
-                ? `<ollama-badge variant="default" size="sm">${model}</ollama-badge>`
-                : ""
-            }
-            ${
-              timestamp
-                ? `<ollama-text variant="caption" color="muted">${timestamp}</ollama-text>`
-                : ""
-            }
-          </div>
-        </button>
+        ${
+          editing
+            ? `<div class="item-main" role="presentation">
+                <div class="title-row">
+                  <ollama-input
+                    class="rename-input"
+                    value="${draftTitle}"
+                    aria-label="Rename conversation"
+                  ></ollama-input>
+                  ${unread > 0 ? `<ollama-badge size="sm">${unread}</ollama-badge>` : ""}
+                </div>
+                <div class="meta-row">
+                  <ollama-badge size="sm">${messageCount}</ollama-badge>
+                  <ollama-text variant="caption" color="muted">messages</ollama-text>
+                  <ollama-badge size="sm">${tokenCount}</ollama-badge>
+                  <ollama-text variant="caption" color="muted">tokens</ollama-text>
+                </div>
+              </div>`
+            : `<button
+                class="item-main"
+                type="button"
+                aria-pressed="${selected ? "true" : "false"}"
+              >
+                <div class="title-row">
+                  <span class="title-text">
+                    <ollama-text variant="label">${title}</ollama-text>
+                    <ollama-tooltip position="bottom-right">${title}</ollama-tooltip>
+                  </span>
+                  ${unread > 0 ? `<ollama-badge size="sm">${unread}</ollama-badge>` : ""}
+                </div>
+                <div class="meta-row">
+                  <ollama-badge size="sm">${messageCount}</ollama-badge>
+                  <ollama-text variant="caption" color="muted">messages</ollama-text>
+                  <ollama-badge size="sm">${tokenCount}</ollama-badge>
+                  <ollama-text variant="caption" color="muted">tokens</ollama-text>
+                </div>
+              </button>`
+        }
         <div class="action-slot" part="actions">
           <slot name="actions">
             <ollama-button
               class="action-button"
               variant="icon"
-              aria-label="More actions"
+              aria-label="Rename conversation"
+              data-action="rename"
             >
-              <ollama-icon name="more-vertical"></ollama-icon>
-              <ollama-tooltip>More actions</ollama-tooltip>
+              <ollama-icon name="pencil" size="xs"></ollama-icon>
+              <ollama-tooltip>Rename</ollama-tooltip>
+            </ollama-button>
+            <ollama-button
+              class="action-button"
+              variant="icon"
+              aria-label="Delete conversation"
+              data-action="delete"
+            >
+              <ollama-icon name="trash-2" size="xs"></ollama-icon>
+              <ollama-tooltip>Delete</ollama-tooltip>
             </ollama-button>
           </slot>
         </div>
       </div>
     `;
+
+    this.wasEditing = editing;
+    this.attachEventListeners();
   }
 }
 

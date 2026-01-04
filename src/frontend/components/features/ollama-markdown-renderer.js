@@ -30,6 +30,27 @@ class OllamaMarkdownRenderer extends BaseComponent {
     let ordered = false;
     let quoteLines = [];
 
+    const parseTableRow = (line) => {
+      let row = line.trim();
+      if (row.startsWith("|")) row = row.slice(1);
+      if (row.endsWith("|")) row = row.slice(0, -1);
+      return row.split("|").map((cell) => cell.trim());
+    };
+
+    const parseTableAlignments = (line) => {
+      const cells = parseTableRow(line);
+      return cells.map((cell) => {
+        const left = cell.startsWith(":");
+        const right = cell.endsWith(":");
+        if (left && right) return "center";
+        if (right) return "right";
+        return "left";
+      });
+    };
+
+    const isTableSeparator = (line) =>
+      /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(line);
+
     const flushParagraph = () => {
       if (!buffer.length) return;
       const paragraph = buffer.join(" ");
@@ -52,13 +73,59 @@ class OllamaMarkdownRenderer extends BaseComponent {
       quoteLines = [];
     };
 
-    for (const line of lines) {
+    for (let index = 0; index < lines.length; index += 1) {
+      const line = lines[index];
       const trimmed = line.trim();
 
       if (!trimmed) {
         flushParagraph();
         flushList();
         flushQuote();
+        continue;
+      }
+
+      const nextLine = lines[index + 1] || "";
+      if (trimmed.includes("|") && isTableSeparator(nextLine)) {
+        flushParagraph();
+        flushList();
+        flushQuote();
+        const headerCells = parseTableRow(trimmed);
+        const alignments = parseTableAlignments(nextLine);
+        const bodyRows = [];
+        index += 2;
+        for (; index < lines.length; index += 1) {
+          const bodyLine = lines[index];
+          if (!bodyLine.trim()) {
+            break;
+          }
+          if (!bodyLine.includes("|")) {
+            index -= 1;
+            break;
+          }
+          bodyRows.push(parseTableRow(bodyLine));
+        }
+        const head = `<thead><tr>${headerCells
+          .map(
+            (cell, i) =>
+              `<th style="text-align:${alignments[i] || "left"}">${this.renderInline(
+                cell,
+              )}</th>`,
+          )
+          .join("")}</tr></thead>`;
+        const body = `<tbody>${bodyRows
+          .map(
+            (row) =>
+              `<tr>${row
+                .map(
+                  (cell, i) =>
+                    `<td style="text-align:${alignments[i] || "left"}">${this.renderInline(
+                      cell,
+                    )}</td>`,
+                )
+                .join("")}</tr>`,
+          )
+          .join("")}</tbody>`;
+        output += `<table class="table">${head}${body}</table>`;
         continue;
       }
 
@@ -226,6 +293,26 @@ class OllamaMarkdownRenderer extends BaseComponent {
           background: var(--color-bg-secondary);
           padding: 0 4px;
           border-radius: var(--radius-sm);
+        }
+
+        .table {
+          width: 100%;
+          border-collapse: collapse;
+          margin: 0 0 var(--spacing-sm);
+          font-family: var(--font-family);
+        }
+
+        .table th,
+        .table td {
+          border: 1px solid var(--color-border);
+          padding: var(--spacing-xs) var(--spacing-sm);
+          vertical-align: top;
+        }
+
+        .table th {
+          background: var(--color-bg-secondary);
+          color: var(--color-text-primary);
+          font-weight: 600;
         }
       </style>
       <div class="content">

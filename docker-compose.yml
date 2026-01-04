@@ -8,8 +8,11 @@ services:
     container_name: ollama-chat-frontend
     ports:
       - "3000:80"
+    environment:
+      - OLLAMA_API_BASE=${OLLAMA_API_BASE:-http://host.docker.internal:11434}
+      - BACKEND_API_BASE=${BACKEND_API_BASE:-http://localhost:8082}
     volumes:
-      - ./build/frontend:/usr/share/nginx/html:ro
+      - ./build/frontend:/usr/share/nginx/html
     networks:
       - ollama-chat-network
     restart: unless-stopped
@@ -24,7 +27,6 @@ services:
     ports:
       - "8082:8080"
     volumes:
-      - ./src/backend:/app:ro
       - ./data:/data
     environment:
       NODE_ENV: production

@@ -3,13 +3,28 @@ import "./ollama-button.js";
 import "./ollama-icon.js";
 import "./ollama-text.js";
 import "./ollama-tooltip.js";
-import Prism from "prismjs";
-import "prismjs/components/prism-javascript.js";
-import "prismjs/components/prism-typescript.js";
-import "prismjs/components/prism-json.js";
-import "prismjs/components/prism-markup.js";
-import "prismjs/components/prism-css.js";
-import "prismjs/components/prism-bash.js";
+const PRISM_BASE_URL = "https://cdn.jsdelivr.net/npm/prismjs@1.29.0";
+let prismLoadPromise = null;
+
+async function ensurePrismLoaded() {
+  if (typeof window === "undefined") return null;
+  if (window.Prism) return window.Prism;
+  if (!prismLoadPromise) {
+    prismLoadPromise = (async () => {
+      await import(`${PRISM_BASE_URL}/prism.js`);
+      await Promise.all([
+        import(`${PRISM_BASE_URL}/components/prism-javascript.js`),
+        import(`${PRISM_BASE_URL}/components/prism-typescript.js`),
+        import(`${PRISM_BASE_URL}/components/prism-json.js`),
+        import(`${PRISM_BASE_URL}/components/prism-markup.js`),
+        import(`${PRISM_BASE_URL}/components/prism-css.js`),
+        import(`${PRISM_BASE_URL}/components/prism-bash.js`),
+      ]);
+      return window.Prism;
+    })();
+  }
+  return prismLoadPromise;
+}
 
 class OllamaCodeBlock extends BaseComponent {
   static get observedAttributes() {
@@ -45,6 +60,27 @@ class OllamaCodeBlock extends BaseComponent {
         this.emit("copy", { code, failed: true });
       }
     });
+  }
+
+  async applyHighlight(languageKey, code) {
+    const codeNode = this.shadowRoot?.querySelector("code");
+    if (!codeNode) return;
+
+    try {
+      const Prism = await ensurePrismLoaded();
+      if (Prism && Prism.languages?.[languageKey]) {
+        codeNode.innerHTML = Prism.highlight(
+          code,
+          Prism.languages[languageKey],
+          languageKey,
+        );
+        return;
+      }
+    } catch (error) {
+      console.warn("[ollama-code-block] Prism failed to load", error);
+    }
+
+    codeNode.textContent = code;
   }
 
   render() {
@@ -153,18 +189,7 @@ class OllamaCodeBlock extends BaseComponent {
       <pre class="code"><code></code></pre>
     `;
 
-    const codeNode = this.shadowRoot?.querySelector("code");
-    if (codeNode) {
-      if (Prism && Prism.languages[languageKey]) {
-        codeNode.innerHTML = Prism.highlight(
-          code,
-          Prism.languages[languageKey],
-          languageKey,
-        );
-      } else {
-        codeNode.textContent = code;
-      }
-    }
+    this.applyHighlight(languageKey, code);
     this.attachEventListeners();
   }
 

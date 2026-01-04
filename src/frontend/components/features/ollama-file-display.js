@@ -5,17 +5,40 @@ import "../base/ollama-icon.js";
 import "../base/ollama-text.js";
 import "../base/ollama-tooltip.js";
 import "../base/ollama-spinner.js";
-import Prism from "prismjs";
-import "prismjs/components/prism-javascript.js";
-import "prismjs/components/prism-typescript.js";
-import "prismjs/components/prism-json.js";
-import "prismjs/components/prism-markup.js";
-import "prismjs/components/prism-css.js";
-import "prismjs/components/prism-markdown.js";
+const PRISM_BASE_URL = "https://cdn.jsdelivr.net/npm/prismjs@1.29.0";
+let prismLoadPromise = null;
+
+async function ensurePrismLoaded() {
+  if (typeof window === "undefined") return null;
+  if (window.Prism) return window.Prism;
+  if (!prismLoadPromise) {
+    prismLoadPromise = (async () => {
+      await import(`${PRISM_BASE_URL}/prism.js`);
+      await Promise.all([
+        import(`${PRISM_BASE_URL}/components/prism-javascript.js`),
+        import(`${PRISM_BASE_URL}/components/prism-typescript.js`),
+        import(`${PRISM_BASE_URL}/components/prism-json.js`),
+        import(`${PRISM_BASE_URL}/components/prism-markup.js`),
+        import(`${PRISM_BASE_URL}/components/prism-css.js`),
+        import(`${PRISM_BASE_URL}/components/prism-markdown.js`),
+      ]);
+      return window.Prism;
+    })();
+  }
+  return prismLoadPromise;
+}
 
 class OllamaFileDisplay extends BaseComponent {
   static get observedAttributes() {
-    return ["path", "content", "language", "size", "lines", "loading"];
+    return [
+      "path",
+      "content",
+      "language",
+      "size",
+      "lines",
+      "loading",
+      "expanded",
+    ];
   }
 
   constructor() {
@@ -47,6 +70,17 @@ class OllamaFileDisplay extends BaseComponent {
         this.emit("copy-file", { content: code, failed: true });
       }
     });
+
+    const toggleButton = this.shadowRoot?.querySelector(".toggle-button");
+    if (toggleButton) {
+      toggleButton.addEventListener("click", () => {
+        if (this.hasAttribute("expanded")) {
+          this.removeAttribute("expanded");
+        } else {
+          this.setAttribute("expanded", "");
+        }
+      });
+    }
   }
 
   normalizeLanguage(language) {
@@ -65,6 +99,36 @@ class OllamaFileDisplay extends BaseComponent {
     return mapping[normalized] || normalized;
   }
 
+  formatBytes(bytes) {
+    if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
+    const units = ["B", "KB", "MB", "GB"];
+    const idx = Math.min(
+      Math.floor(Math.log(bytes) / Math.log(1024)),
+      units.length - 1,
+    );
+    const value = bytes / 1024 ** idx;
+    return `${value.toFixed(value >= 10 || idx === 0 ? 0 : 1)} ${units[idx]}`;
+  }
+
+  async applyHighlight(language, content) {
+    const codeNode = this.shadowRoot?.querySelector("code");
+    if (!codeNode) return;
+    try {
+      const Prism = await ensurePrismLoaded();
+      if (Prism && Prism.languages?.[language]) {
+        codeNode.innerHTML = Prism.highlight(
+          content,
+          Prism.languages[language],
+          language,
+        );
+        return;
+      }
+    } catch (error) {
+      console.warn("[ollama-file-display] Prism failed to load", error);
+    }
+    codeNode.textContent = content;
+  }
+
   render() {
     const path = this.getAttribute("path") || "untitled";
     const language = this.normalizeLanguage(this.getAttribute("language"));
@@ -72,6 +136,11 @@ class OllamaFileDisplay extends BaseComponent {
     const lines = this.getAttribute("lines");
     const loading = this.hasAttribute("loading");
     const content = this.getContent();
+    const expanded = this.hasAttribute("expanded");
+    const derivedLines =
+      lines || String(content.split("\n").filter(Boolean).length || 0);
+    const derivedSize =
+      size || this.formatBytes(new TextEncoder().encode(content).length);
 
     this.shadowRoot.innerHTML = `
       <style>
@@ -108,6 +177,12 @@ class OllamaFileDisplay extends BaseComponent {
           color: var(--color-text-secondary);
         }
 
+        .header-actions {
+          display: inline-flex;
+          align-items: center;
+          gap: var(--spacing-xs);
+        }
+
         .content {
           padding: var(--spacing-md);
           font-family: var(--font-family-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
@@ -133,6 +208,10 @@ class OllamaFileDisplay extends BaseComponent {
           width: 24px;
           height: 24px;
           border-radius: 12px;
+        }
+
+        :host(:not([expanded])) .body {
+          display: none;
         }
 
         .token.comment,
@@ -188,15 +267,25 @@ class OllamaFileDisplay extends BaseComponent {
         }
       </style>
       <div class="header">
-        <ollama-text variant="label">${path}</ollama-text>
         <div class="meta">
+          <ollama-text variant="label">${path}</ollama-text>
           ${language ? `<ollama-badge size="sm">${language}</ollama-badge>` : ""}
-          ${size ? `<ollama-badge size="sm">${size}</ollama-badge>` : ""}
-          ${lines ? `<ollama-badge size="sm">${lines} lines</ollama-badge>` : ""}
-          <ollama-button class="copy-button" variant="icon" aria-label="Copy file">
-            <ollama-icon name="copy" size="xs"></ollama-icon>
-            <ollama-tooltip>Copy</ollama-tooltip>
-          </ollama-button>
+          ${derivedSize ? `<ollama-badge size="sm">${derivedSize}</ollama-badge>` : ""}
+          ${derivedLines ? `<ollama-badge size="sm">${derivedLines} lines</ollama-badge>` : ""}
+        </div>
+        <div class="meta">
+          <div class="header-actions">
+            <ollama-button class="toggle-button" variant="icon" aria-label="${
+              expanded ? "Collapse file" : "Expand file"
+            }">
+              <ollama-icon name="${expanded ? "chevron-up" : "chevron-down"}" size="xs"></ollama-icon>
+              <ollama-tooltip>${expanded ? "Collapse" : "Expand"}</ollama-tooltip>
+            </ollama-button>
+            <ollama-button class="copy-button" variant="icon" aria-label="Copy file">
+              <ollama-icon name="copy" size="xs"></ollama-icon>
+              <ollama-tooltip>Copy</ollama-tooltip>
+            </ollama-button>
+          </div>
         </div>
       </div>
       <div class="body">
@@ -212,18 +301,7 @@ class OllamaFileDisplay extends BaseComponent {
       </div>
     `;
 
-    const codeNode = this.shadowRoot?.querySelector("code");
-    if (codeNode) {
-      if (Prism && Prism.languages[language]) {
-        codeNode.innerHTML = Prism.highlight(
-          content,
-          Prism.languages[language],
-          language,
-        );
-      } else {
-        codeNode.textContent = content;
-      }
-    }
+    this.applyHighlight(language, content);
     this.attachEventListeners();
   }
 }
