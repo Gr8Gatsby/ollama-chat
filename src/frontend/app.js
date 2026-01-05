@@ -695,25 +695,32 @@ None yet - project just created
   async updateProjectLint(projectId) {
     if (!projectId) return;
     const entryPath = this.getProjectEntryPath(projectId);
-    await this.ensureProjectFileContent(projectId, entryPath);
     const files = this.projectFilesByProject[projectId] || [];
     const fileMap = new Set(files.map((file) => file.path));
-    const entryFile = this.projectFileContentByProject[projectId]?.[entryPath];
     const lint = [];
-    if (!entryFile?.content) {
-      lint.push({
-        message: `Entry file '${entryPath}' is missing from the project files.`,
-      });
-    } else {
-      const refs = this.collectEntryReferences(entryFile.content);
-      refs.forEach((ref) => {
-        if (!fileMap.has(ref)) {
-          lint.push({
-            message: `Reference '${ref}' does not exist in the project files.`,
-          });
-        }
-      });
+
+    // Only try to load and lint the entry file if it exists in the project
+    if (fileMap.has(entryPath)) {
+      await this.ensureProjectFileContent(projectId, entryPath);
+      const entryFile =
+        this.projectFileContentByProject[projectId]?.[entryPath];
+
+      if (!entryFile?.content) {
+        lint.push({
+          message: `Entry file '${entryPath}' is missing from the project files.`,
+        });
+      } else {
+        const refs = this.collectEntryReferences(entryFile.content);
+        refs.forEach((ref) => {
+          if (!fileMap.has(ref)) {
+            lint.push({
+              message: `Reference '${ref}' does not exist in the project files.`,
+            });
+          }
+        });
+      }
     }
+
     this.projectLintByProject[projectId] = lint;
   }
 
