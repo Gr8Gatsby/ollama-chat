@@ -69,6 +69,16 @@ export class OllamaChatInput extends BaseComponent {
       return;
     }
 
+    // Don't re-render on model change to preserve input value
+    if (name === "model" || name === "model-options") {
+      // Just update the select without re-rendering
+      const modelSelect = this.shadowRoot?.querySelector(".model-select");
+      if (modelSelect && name === "model") {
+        modelSelect.setAttribute("value", newValue);
+      }
+      return;
+    }
+
     this.render();
   }
 
@@ -394,13 +404,9 @@ export class OllamaChatInput extends BaseComponent {
               <ollama-select
                 class="model-select"
                 size="sm"
+                variant="textlike"
                 value="${selectedModel}"
                 aria-label="Model"
-                style="
-                  min-width: 108px;
-                  --select-padding-right: calc(var(--spacing-lg) + var(--spacing-sm));
-                  --select-chevron-offset: var(--spacing-sm);
-                "
                 ${disabled ? "disabled" : ""}
               >
                 ${modelOptions
