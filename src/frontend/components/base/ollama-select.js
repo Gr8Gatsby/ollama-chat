@@ -146,18 +146,18 @@ export class OllamaSelect extends BaseComponent {
           border: none;
           background: transparent;
           font-weight: 600;
-          padding: var(--spacing-xs) calc(var(--spacing-lg) + var(--spacing-xs)) var(--spacing-xs) var(--spacing-xs);
-          background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23666' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
-          background-position: right var(--spacing-xs) center;
+          padding: var(--spacing-xs);
+          background-image: none;
           border-radius: var(--radius-sm);
         }
 
-        select.textlike:hover:not(:disabled) {
-          background: var(--color-bg-secondary);
-        }
-
+        select.textlike:hover:not(:disabled),
         select.textlike:focus {
           background: var(--color-bg-secondary);
+          padding-right: calc(var(--spacing-lg) + var(--spacing-xs));
+          background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23666' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
+          background-position: right var(--spacing-xs) center;
+          background-repeat: no-repeat;
           box-shadow: none;
         }
 
