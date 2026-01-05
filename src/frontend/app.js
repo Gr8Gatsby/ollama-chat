@@ -118,12 +118,15 @@ class OllamaFrontendApp extends HTMLElement {
 
   setMode(nextMode) {
     this.mode = nextMode;
+    // Immediately schedule a render for instant UI feedback
+    this.scheduleRender();
+
+    // Load project data in background if switching to project mode
     if (nextMode === "project" && this.activeConversationId) {
       this.loadProject(this.activeConversationId).then(() =>
         this.scheduleRender(),
       );
     }
-    this.render();
   }
 
   async loadConversations() {
