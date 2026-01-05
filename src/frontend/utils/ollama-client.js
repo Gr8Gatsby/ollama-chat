@@ -1,5 +1,17 @@
 const DEFAULT_OLLAMA_BASE = window.OLLAMA_API_BASE || "http://localhost:11434";
 
+function isVisionModel(modelName) {
+  const visionKeywords = [
+    "vision",
+    "llava",
+    "bakllava",
+    "llama3.2-vision",
+    "minicpm-v",
+  ];
+  const nameLower = modelName.toLowerCase();
+  return visionKeywords.some((keyword) => nameLower.includes(keyword));
+}
+
 export async function listModels(baseUrl = DEFAULT_OLLAMA_BASE) {
   const response = await fetch(`${baseUrl}/api/tags`);
   if (!response.ok) {
@@ -12,6 +24,7 @@ export async function listModels(baseUrl = DEFAULT_OLLAMA_BASE) {
     value: model.name,
     size: model.size,
     modifiedAt: model.modified_at,
+    supportsVision: isVisionModel(model.name),
   }));
 }
 

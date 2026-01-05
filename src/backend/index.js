@@ -274,6 +274,7 @@ function listMessages(conversationId) {
       role,
       content,
       model,
+      images,
       created_at,
       (
         SELECT COALESCE(SUM(total_tokens), 0)
@@ -289,6 +290,7 @@ function listMessages(conversationId) {
     role: row.role,
     content: row.content,
     model: row.model,
+    images: row.images,
     createdAt: row.created_at,
     tokens: row.token_count || 0,
   }));
@@ -314,13 +316,21 @@ function touchConversation(conversationId) {
   stmt.run(Date.now(), conversationId);
 }
 
-function createMessage({ conversationId, role, content, model }) {
+function createMessage({ conversationId, role, content, model, images }) {
   const messageId = randomUUID();
   const stmt = db.prepare(`
-    INSERT INTO messages (id, conversation_id, role, content, model, created_at)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT INTO messages (id, conversation_id, role, content, model, images, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
   `);
-  stmt.run(messageId, conversationId, role, content, model || null, Date.now());
+  stmt.run(
+    messageId,
+    conversationId,
+    role,
+    content,
+    model || null,
+    images || null,
+    Date.now(),
+  );
   touchConversation(conversationId);
   return messageId;
 }
@@ -614,6 +624,7 @@ const server = createServer(async (req, res) => {
             role: body.role,
             content: body.content,
             model: body.model,
+            images: body.images,
           });
           return sendJson(res, 201, { id: messageId });
         } catch (error) {

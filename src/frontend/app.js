@@ -72,6 +72,7 @@ class OllamaFrontendApp extends HTMLElement {
         this.models = models.map((model) => ({
           label: model.label,
           value: model.value,
+          supportsVision: model.supportsVision,
         }));
         this.activeModel = this.models[0].value;
         this.scheduleRender();
@@ -79,6 +80,17 @@ class OllamaFrontendApp extends HTMLElement {
     } catch (error) {
       console.warn("[frontend] Failed to load models:", error);
     }
+  }
+
+  getActiveModelInfo() {
+    return (
+      this.models.find((m) => m.value === this.activeModel) || this.models[0]
+    );
+  }
+
+  activeModelSupportsVision() {
+    const modelInfo = this.getActiveModelInfo();
+    return modelInfo?.supportsVision || false;
   }
 
   scheduleRender() {
@@ -122,7 +134,7 @@ class OllamaFrontendApp extends HTMLElement {
           id: item.id,
           title: item.title || "New chat",
           model: item.model || this.activeModel,
-          timestamp: item.updatedAt || new Date().toISOString(),
+          timestamp: item.updatedAt || Date.now(),
           messageCount: item.messageCount || 0,
           tokenCount: item.tokenCount || 0,
           unread: 0,
@@ -148,7 +160,7 @@ class OllamaFrontendApp extends HTMLElement {
           id: fallbackId,
           title: "New chat",
           model: this.activeModel,
-          timestamp: new Date().toISOString(),
+          timestamp: Date.now(),
           messageCount: 0,
           tokenCount: 0,
           unread: 0,
@@ -186,8 +198,9 @@ class OllamaFrontendApp extends HTMLElement {
         role: msg.role,
         content: msg.content,
         model: msg.model || this.activeModel,
-        timestamp: msg.createdAt || new Date().toISOString(),
+        timestamp: msg.createdAt || Date.now(),
         tokens: msg.tokens && Number(msg.tokens) > 0 ? String(msg.tokens) : "",
+        images: msg.images ? JSON.parse(msg.images) : undefined,
       }));
     } catch (error) {
       console.warn("[frontend] Failed to load messages:", error);
@@ -602,7 +615,7 @@ Instructions:
       (item) => item.id === conversationId,
     );
     if (!conversation) return;
-    conversation.timestamp = new Date().toISOString();
+    conversation.timestamp = Date.now();
     conversation.messageCount = this.activeMessages.length;
     conversation.tokenCount =
       (conversation.tokenCount || 0) + (tokenDelta || 0);
@@ -718,6 +731,18 @@ Instructions:
     }
   }
 
+  async fileToBase64(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const base64 = reader.result.split(",")[1]; // Remove data:image/...;base64, prefix
+        resolve(base64);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+
   extractFilePreviewParts(content, fallbackLanguage = "html") {
     const fenceRegex = /```(\w+)?[^\n]*\n([\s\S]*?)```/;
     const match = content.match(fenceRegex);
@@ -736,7 +761,7 @@ Instructions:
     return { before, code, after, language };
   }
 
-  async handleSend(message) {
+  async handleSend(message, attachedFiles = []) {
     if (!message?.trim()) return;
     let conversationId = this.activeConversationId;
     if (!conversationId) {
@@ -747,12 +772,32 @@ Instructions:
         this.activeConversationId = conversationId;
       }
     }
+
+    // Process images: convert to base64
+    const images = [];
+    for (const fileData of attachedFiles) {
+      if (fileData.type.startsWith("image/")) {
+        try {
+          const base64 = await this.fileToBase64(fileData.file);
+          images.push(base64);
+        } catch (error) {
+          console.warn("[frontend] Failed to process image:", error);
+        }
+      }
+    }
+
     const userMessage = {
       id: `user-${Date.now()}`,
       role: "user",
       content: message,
-      timestamp: new Date().toISOString(),
+      timestamp: Date.now(),
       model: this.activeModel,
+      images: images.length > 0 ? images : undefined,
+      attachedFiles: attachedFiles.map((f) => ({
+        name: f.name,
+        size: f.size,
+        type: f.type,
+      })),
     };
 
     this.appendMessage(conversationId, userMessage);
@@ -763,6 +808,17 @@ Instructions:
           role: "user",
           content: message,
           model: this.activeModel,
+          images: images.length > 0 ? JSON.stringify(images) : undefined,
+          attachedFiles:
+            attachedFiles.length > 0
+              ? JSON.stringify(
+                  attachedFiles.map((f) => ({
+                    name: f.name,
+                    size: f.size,
+                    type: f.type,
+                  })),
+                )
+              : undefined,
         });
         userMessage.id = messageId;
       } catch (error) {
@@ -774,7 +830,7 @@ Instructions:
       id: `assistant-${Date.now()}`,
       role: "assistant",
       content: "",
-      timestamp: new Date().toISOString(),
+      timestamp: Date.now(),
       model: this.activeModel,
       streaming: true,
     };
@@ -815,10 +871,17 @@ Instructions:
               },
             ]
           : []),
-        ...this.activeMessages.map((msg) => ({
-          role: msg.role === "assistant" ? "assistant" : "user",
-          content: msg.content,
-        })),
+        ...this.activeMessages.map((msg) => {
+          const message = {
+            role: msg.role === "assistant" ? "assistant" : "user",
+            content: msg.content,
+          };
+          // Add images array if present (for multimodal models)
+          if (msg.images && msg.images.length > 0) {
+            message.images = msg.images;
+          }
+          return message;
+        }),
       ],
     };
 
@@ -888,7 +951,7 @@ Instructions:
   attachListeners() {
     const chatInput = this.querySelector("ollama-chat-input");
     chatInput?.addEventListener("send", (event) => {
-      this.handleSend(event.detail?.value);
+      this.handleSend(event.detail?.value, event.detail?.attachedFiles);
     });
     chatInput?.addEventListener("model-change", (event) => {
       const value = event.detail?.value;
@@ -991,7 +1054,7 @@ Instructions:
         id,
         title: "New chat",
         model: this.activeModel,
-        timestamp: new Date().toISOString(),
+        timestamp: Date.now(),
         messageCount: 0,
         tokenCount: 0,
         unread: 0,
@@ -1027,7 +1090,7 @@ Instructions:
                   id: newId,
                   title: "New chat",
                   model: this.activeModel,
-                  timestamp: new Date().toISOString(),
+                  timestamp: Date.now(),
                   messageCount: 0,
                   tokenCount: 0,
                   unread: 0,
