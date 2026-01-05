@@ -264,6 +264,7 @@ export class OllamaChatInput extends BaseComponent {
           flex-direction: column;
           gap: var(--spacing-xs);
           padding: var(--spacing-lg);
+          padding-bottom: calc(var(--spacing-lg) / 2);
           background: var(--color-bg-secondary);
           border-radius: 20px;
           border: 1px solid rgba(0, 0, 0, 0.04);
@@ -309,13 +310,33 @@ export class OllamaChatInput extends BaseComponent {
           display: inline-flex;
           align-items: center;
           justify-content: center;
-          width: 28px;
-          height: 28px;
-          border-radius: 14px;
+          width: 32px;
+          height: 32px;
+          padding: 0;
+          border-radius: var(--radius-md);
           border: none;
-          background: rgba(0, 0, 0, 0.08);
-          color: var(--color-text-secondary);
+          background: transparent;
+          color: var(--color-text-primary);
           cursor: pointer;
+          position: relative;
+        }
+
+        .action-button::before {
+          content: '';
+          position: absolute;
+          inset: 0;
+          border-radius: var(--radius-md);
+          background: rgba(0, 0, 0, 0.08);
+          opacity: 0;
+          transition: opacity 0.15s ease;
+        }
+
+        .action-button:hover:not(:disabled)::before {
+          opacity: 1;
+        }
+
+        :host([data-theme="dark"]) .action-button::before {
+          background: rgba(255, 255, 255, 0.12);
         }
 
         .action-button .label {
@@ -325,14 +346,6 @@ export class OllamaChatInput extends BaseComponent {
         .action-button:disabled {
           opacity: 0.35;
           cursor: not-allowed;
-        }
-
-        .action-button:hover:not(:disabled) {
-          background: rgba(0, 0, 0, 0.08);
-        }
-
-        :host([data-theme="dark"]) .action-button {
-          background: rgba(255, 255, 255, 0.08);
         }
 
         .model-select {
@@ -352,26 +365,41 @@ export class OllamaChatInput extends BaseComponent {
         }
 
         .send-button {
-          width: 32px;
-          height: 32px;
-          border-radius: 16px;
-          border: none;
-          background: var(--color-accent-primary);
           display: inline-flex;
           align-items: center;
           justify-content: center;
-          color: var(--color-on-accent, #fff);
+          width: 32px;
+          height: 32px;
+          padding: 0;
+          border-radius: var(--radius-md);
+          border: none;
+          background: transparent;
+          color: var(--color-text-primary);
           cursor: pointer;
-          box-shadow: var(--shadow-sm);
+          position: relative;
+        }
+
+        .send-button::before {
+          content: '';
+          position: absolute;
+          inset: 0;
+          border-radius: var(--radius-md);
+          background: rgba(0, 0, 0, 0.08);
+          opacity: 0;
+          transition: opacity 0.15s ease;
+        }
+
+        .send-button:hover:not(:disabled)::before {
+          opacity: 1;
+        }
+
+        :host([data-theme="dark"]) .send-button::before {
+          background: rgba(255, 255, 255, 0.12);
         }
 
         .send-button:disabled {
           opacity: 0.35;
           cursor: not-allowed;
-        }
-
-        .send-button:hover:not(:disabled) {
-          background: var(--color-accent-primary-hover);
         }
       </style>
       <div class="composer" part="composer">
@@ -426,7 +454,7 @@ export class OllamaChatInput extends BaseComponent {
                 aria-label="Send message"
               >
                 <slot name="send-icon">
-                  <ollama-icon name="send" size="sm"></ollama-icon>
+                  <ollama-icon name="send-horizontal" size="sm" style="stroke-width: 2.5;"></ollama-icon>
                 </slot>
               </button>
             </div>
@@ -452,7 +480,7 @@ export class OllamaChatInput extends BaseComponent {
             ${disabled ? "disabled" : ""}
             aria-label="${tooltipText}"
           >
-            <ollama-icon name="${action.icon}" size="sm"></ollama-icon>
+            <ollama-icon name="${action.icon}" size="sm" style="stroke-width: 2.5;"></ollama-icon>
             ${action.label ? `<span class="label">${action.label}</span>` : ""}
             ${
               tooltipText

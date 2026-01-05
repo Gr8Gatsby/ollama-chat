@@ -5,6 +5,7 @@ import "../base/ollama-icon.js";
 import "../base/ollama-text.js";
 import "../base/ollama-tooltip.js";
 import "../base/ollama-spinner.js";
+import "./ollama-markdown-renderer.js";
 const PRISM_BASE_URL = "https://cdn.jsdelivr.net/npm/prismjs@1.29.0";
 let prismLoadPromise = null;
 
@@ -237,6 +238,16 @@ class OllamaFileDisplay extends BaseComponent {
           min-height: 0;
         }
 
+        .markdown-content {
+          padding: var(--spacing-md);
+          font-family: var(--font-family);
+          font-size: var(--font-size-md);
+          line-height: 1.6;
+          overflow: auto;
+          flex: 1;
+          min-height: 0;
+        }
+
         .loading {
           position: absolute;
           inset: 0;
@@ -335,7 +346,13 @@ class OllamaFileDisplay extends BaseComponent {
         </div>
       </div>
       <div class="body">
-        <pre class="content"><code></code></pre>
+        ${
+          language === "markdown"
+            ? `<div class="markdown-content">
+                 <ollama-markdown-renderer content="${this.escapeAttribute(content)}"></ollama-markdown-renderer>
+               </div>`
+            : `<pre class="content"><code></code></pre>`
+        }
         ${
           loading
             ? `<div class="loading">
@@ -348,8 +365,14 @@ class OllamaFileDisplay extends BaseComponent {
       </div>
     `;
 
-    this.applyHighlight(language, content);
+    if (language !== "markdown") {
+      this.applyHighlight(language, content);
+    }
     this.attachEventListeners();
+  }
+
+  escapeAttribute(value) {
+    return String(value).replace(/"/g, "&quot;");
   }
 }
 

@@ -3,6 +3,10 @@ import "../base/ollama-badge.js";
 import "../base/ollama-text.js";
 import "../base/ollama-tooltip.js";
 import "./ollama-message-actions.js";
+import {
+  formatRelativeTime,
+  formatFullDateTime,
+} from "../../utils/time-format.js";
 
 class OllamaUserMessage extends BaseComponent {
   static get observedAttributes() {
@@ -25,6 +29,9 @@ class OllamaUserMessage extends BaseComponent {
     const timestamp = this.getAttribute("timestamp") || "";
     const tokens = this.getAttribute("tokens") || "";
     const model = this.getAttribute("model") || "";
+
+    const relativeTime = timestamp ? formatRelativeTime(timestamp) : "";
+    const fullDateTime = timestamp ? formatFullDateTime(timestamp) : "";
 
     this.shadowRoot.innerHTML = `
       <style>
@@ -83,7 +90,14 @@ class OllamaUserMessage extends BaseComponent {
           </div>
           <div class="meta" part="meta">
             ${model ? `<ollama-badge size="sm">${model}</ollama-badge>` : ""}
-            ${timestamp ? `<ollama-text variant="caption" color="muted">${timestamp}</ollama-text>` : ""}
+            ${
+              relativeTime
+                ? `<span class="timestamp-wrapper">
+                     <ollama-text variant="caption" color="muted">${relativeTime}</ollama-text>
+                     <ollama-tooltip position="top-right">${fullDateTime}</ollama-tooltip>
+                   </span>`
+                : ""
+            }
             ${
               tokens
                 ? `<span class="token-badge">

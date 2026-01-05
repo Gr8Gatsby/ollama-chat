@@ -122,7 +122,7 @@ class OllamaFrontendApp extends HTMLElement {
           id: item.id,
           title: item.title || "New chat",
           model: item.model || this.activeModel,
-          timestamp: item.updatedAt ? "Just now" : "",
+          timestamp: item.updatedAt || new Date().toISOString(),
           messageCount: item.messageCount || 0,
           tokenCount: item.tokenCount || 0,
           unread: 0,
@@ -148,7 +148,7 @@ class OllamaFrontendApp extends HTMLElement {
           id: fallbackId,
           title: "New chat",
           model: this.activeModel,
-          timestamp: "Just now",
+          timestamp: new Date().toISOString(),
           messageCount: 0,
           tokenCount: 0,
           unread: 0,
@@ -186,7 +186,7 @@ class OllamaFrontendApp extends HTMLElement {
         role: msg.role,
         content: msg.content,
         model: msg.model || this.activeModel,
-        timestamp: "Just now",
+        timestamp: msg.createdAt || new Date().toISOString(),
         tokens: msg.tokens && Number(msg.tokens) > 0 ? String(msg.tokens) : "",
       }));
     } catch (error) {
@@ -445,8 +445,23 @@ Instructions:
         pinned: true,
       });
     }
+    const guidance = files.find((file) => file.path === "project.guidance.md");
+    if (guidance) {
+      root.children.push({
+        name: "project.guidance.md",
+        type: "file",
+        path: "project.guidance.md",
+        language: guidance.language || "markdown",
+        size: guidance.size || 0,
+        pinned: true,
+      });
+    }
     files.forEach((file) => {
-      if (file.path === "project.manifest.json") return;
+      if (
+        file.path === "project.manifest.json" ||
+        file.path === "project.guidance.md"
+      )
+        return;
       const parts = file.path.split("/").filter(Boolean);
       let currentPath = "";
       let parent = root;
@@ -587,10 +602,83 @@ Instructions:
       (item) => item.id === conversationId,
     );
     if (!conversation) return;
-    conversation.timestamp = "Just now";
+    conversation.timestamp = new Date().toISOString();
     conversation.messageCount = this.activeMessages.length;
     conversation.tokenCount =
       (conversation.tokenCount || 0) + (tokenDelta || 0);
+  }
+
+  async handleProjectDownload() {
+    if (!this.activeConversationId) return;
+
+    const project = this.projectByConversation[this.activeConversationId];
+    if (!project?.id) return;
+
+    const projectFiles = this.projectFilesByProject[project.id] || [];
+    const messages =
+      this.messagesByConversation[this.activeConversationId] || [];
+
+    try {
+      // Dynamically import JSZip
+      const JSZip = (
+        await import("https://cdn.jsdelivr.net/npm/jszip@3.10.1/+esm")
+      ).default;
+      const zip = new JSZip();
+
+      // Add project files
+      await this.ensureAllProjectFilesContent(project.id);
+      const fileContents = this.projectFileContentByProject[project.id] || {};
+
+      for (const file of projectFiles) {
+        const fileData = fileContents[file.path];
+        const content = fileData?.content || "";
+        zip.file(file.path, content);
+      }
+
+      // Create chat folder and add conversation
+      const chatFolder = zip.folder("chat");
+      const chatContent = this.formatChatForExport(messages, project.name);
+      chatFolder.file("conversation.md", chatContent);
+
+      // Generate zip file
+      const blob = await zip.generateAsync({ type: "blob" });
+
+      // Trigger download
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `${project.name || "project"}.zip`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error("Failed to download project:", error);
+    }
+  }
+
+  formatChatForExport(messages, projectName) {
+    let markdown = `# ${projectName || "Project"} - Chat Export\n\n`;
+    markdown += `Exported: ${new Date().toLocaleString()}\n\n`;
+    markdown += `---\n\n`;
+
+    for (const message of messages) {
+      const role = message.role === "user" ? "User" : "Assistant";
+      const timestamp = message.timestamp
+        ? new Date(message.timestamp).toLocaleString()
+        : "";
+
+      markdown += `## ${role}`;
+      if (timestamp) {
+        markdown += ` - ${timestamp}`;
+      }
+      if (message.model) {
+        markdown += ` (${message.model})`;
+      }
+      markdown += `\n\n`;
+      markdown += `${message.content}\n\n`;
+      markdown += `---\n\n`;
+    }
+
+    return markdown;
   }
 
   appendMessage(conversationId, message) {
@@ -663,7 +751,7 @@ Instructions:
       id: `user-${Date.now()}`,
       role: "user",
       content: message,
-      timestamp: "Just now",
+      timestamp: new Date().toISOString(),
       model: this.activeModel,
     };
 
@@ -686,7 +774,7 @@ Instructions:
       id: `assistant-${Date.now()}`,
       role: "assistant",
       content: "",
-      timestamp: "Just now",
+      timestamp: new Date().toISOString(),
       model: this.activeModel,
       streaming: true,
     };
@@ -806,7 +894,7 @@ Instructions:
       const value = event.detail?.value;
       if (value) {
         this.activeModel = value;
-        this.scheduleRender();
+        // Don't re-render - the chat-input component handles its own update
       }
     });
 
@@ -903,7 +991,7 @@ Instructions:
         id,
         title: "New chat",
         model: this.activeModel,
-        timestamp: "Just now",
+        timestamp: new Date().toISOString(),
         messageCount: 0,
         tokenCount: 0,
         unread: 0,
@@ -939,7 +1027,7 @@ Instructions:
                   id: newId,
                   title: "New chat",
                   model: this.activeModel,
-                  timestamp: "Just now",
+                  timestamp: new Date().toISOString(),
                   messageCount: 0,
                   tokenCount: 0,
                   unread: 0,
@@ -982,6 +1070,10 @@ Instructions:
         const state = this.getProjectState(this.activeConversationId);
         state.expanded = expanded;
         this.scheduleRender();
+      });
+
+      projectView.addEventListener("project-download", async () => {
+        await this.handleProjectDownload();
       });
     }
 

@@ -5,6 +5,10 @@ import "../base/ollama-text.js";
 import "../base/ollama-tooltip.js";
 import "./ollama-message-actions.js";
 import "./ollama-markdown-renderer.js";
+import {
+  formatRelativeTime,
+  formatFullDateTime,
+} from "../../utils/time-format.js";
 
 class OllamaAiResponse extends BaseComponent {
   static get observedAttributes() {
@@ -17,9 +21,20 @@ class OllamaAiResponse extends BaseComponent {
   }
 
   attributeChangedCallback(name, oldValue, newValue) {
-    if (oldValue !== newValue) {
-      this.render();
+    if (oldValue === newValue) return;
+
+    // If only content changed and we're streaming, just update the markdown renderer
+    if (name === "content" && this.hasAttribute("streaming")) {
+      const renderer = this.shadowRoot?.querySelector(
+        "ollama-markdown-renderer",
+      );
+      if (renderer) {
+        renderer.setAttribute("content", newValue || "");
+        return;
+      }
     }
+
+    this.render();
   }
 
   render() {
@@ -28,6 +43,9 @@ class OllamaAiResponse extends BaseComponent {
     const tokens = this.getAttribute("tokens") || "";
     const model = this.getAttribute("model") || "";
     const streaming = this.hasAttribute("streaming");
+
+    const relativeTime = timestamp ? formatRelativeTime(timestamp) : "";
+    const fullDateTime = timestamp ? formatFullDateTime(timestamp) : "";
 
     this.shadowRoot.innerHTML = `
       <style>
@@ -85,7 +103,14 @@ class OllamaAiResponse extends BaseComponent {
         </div>
         <div class="meta" part="meta">
           ${model ? `<ollama-badge size="sm">${model}</ollama-badge>` : ""}
-          ${timestamp ? `<ollama-text variant="caption" color="muted">${timestamp}</ollama-text>` : ""}
+          ${
+            relativeTime
+              ? `<span class="timestamp-wrapper">
+                   <ollama-text variant="caption" color="muted">${relativeTime}</ollama-text>
+                   <ollama-tooltip position="top-right">${fullDateTime}</ollama-tooltip>
+                 </span>`
+              : ""
+          }
           ${
             tokens
               ? `<span class="token-badge">
