@@ -244,7 +244,8 @@ class OllamaFrontendApp extends HTMLElement {
         (path) =>
           path &&
           path !== "project.manifest.json" &&
-          path !== "project.guidance.md",
+          path !== "project.guidance.md" &&
+          path !== "project.spec.md",
       )
       .filter((path, index, list) => list.indexOf(path) === index)
       .sort();
@@ -273,24 +274,386 @@ class OllamaFrontendApp extends HTMLElement {
 
 You are building a no-build web project that runs directly in an iframe.
 
-## Project structure (default)
+## Development Philosophy: Start Small, Iterate
 
-- \`index.html\` (entrypoint)
-- \`styles.css\` (global styles)
-- \`src/main.js\` (bootstrap; registers components)
-- \`src/components/*.js\` (one file per Web Component)
+You are working with a local LLM with limited context. ALWAYS follow this approach:
+
+### For New Projects
+1. **Start with MVP (Minimum Viable Product)**
+   - Build the simplest working version first
+   - Include ONLY core functionality
+   - Use placeholder data instead of complex state management
+   - Defer features like error handling, loading states, animations
+
+2. **Suggest Scope Before Building**
+   - When user requests a project, identify core MVP features
+   - List potential enhancements as "next steps"
+   - Ask user to confirm MVP scope before generating code
+   - Example: "I'll start with: [list]. We can add [features] later. Sound good?"
+
+3. **One Feature at a Time**
+   - After MVP, add ONE feature per conversation turn
+   - Update only the affected files
+   - Don't regenerate unchanged files
+
+### For Existing Projects
+1. **Update Individual Files**
+   - Only generate files that need changes
+   - Reference existing files by name when building on them
+   - Don't duplicate unchanged code
+
+2. **Incremental Enhancement**
+   - Add one component at a time
+   - Extend functionality in small steps
+   - Test each change before adding more
+
+### Why This Matters
+- **Token limits**: Large responses may be cut off
+- **Quality**: Small changes are more accurate than large rewrites
+- **Debugging**: Easier to identify issues in focused changes
+- **User experience**: Faster iterations, better feedback loop
+
+## Architecture
+
+Your application should follow this structure:
+
+1. **index.html** - Application layout and shell (semantic HTML only)
+   - Contains: \`<header>\`, \`<main>\`, \`<nav>\`, \`<footer>\`, etc.
+   - No inline scripts or styles
+   - References: styles.css, src/app.js
+
+2. **styles.css** - Global styles and design system
+   - CSS custom properties for theming
+   - Layout utilities (Grid, Flexbox)
+   - Typography and spacing scales
+
+3. **src/app.js** - Application coordination and state
+   - Import and register all components
+   - Handle application-level state and data flow
+   - Coordinate component interactions
+   - Setup event listeners for cross-component communication
+
+4. **src/components/*.js** - Reusable Web Components
+   - One component per file
+   - Self-contained with Shadow DOM
+   - Accept data via attributes/properties
+   - Emit custom events for parent communication
+
+## File Response Format
+
+You MUST respond with files in this exact format:
+
+\`\`\`
+File: path/to/file.ext
+\`\`\`language
+[file content]
+\`\`\`
+\`\`\`
+
+Example:
+
+\`\`\`
+File: index.html
+\`\`\`html
+<!DOCTYPE html>
+<html>
+...
+</html>
+\`\`\`
+
+File: src/components/my-component.js
+\`\`\`javascript
+class MyComponent extends HTMLElement {
+  // component code
+}
+\`\`\`
+\`\`\`
+
+## Component Patterns
+
+### Basic Component
+\`\`\`javascript
+class ComponentName extends HTMLElement {
+  constructor() {
+    super();
+    this.attachShadow({ mode: 'open' });
+  }
+
+  connectedCallback() {
+    this.render();
+  }
+
+  render() {
+    this.shadowRoot.innerHTML = \\\`
+      <style>
+        :host { display: block; }
+      </style>
+      <div>Component content</div>
+    \\\`;
+  }
+}
+
+customElements.define('component-name', ComponentName);
+\`\`\`
+
+### Component with Properties
+\`\`\`javascript
+class UserCard extends HTMLElement {
+  static get observedAttributes() {
+    return ['name', 'email'];
+  }
+
+  attributeChangedCallback(name, oldValue, newValue) {
+    if (oldValue !== newValue) {
+      this.render();
+    }
+  }
+
+  render() {
+    const name = this.getAttribute('name') || 'Unknown';
+    const email = this.getAttribute('email') || '';
+    this.shadowRoot.innerHTML = \\\`
+      <div class="user-card">
+        <h3>\${name}</h3>
+        <p>\${email}</p>
+      </div>
+    \\\`;
+  }
+}
+\`\`\`
+
+### Component with Events
+\`\`\`javascript
+class CustomButton extends HTMLElement {
+  connectedCallback() {
+    this.render();
+    this.shadowRoot.querySelector('button').addEventListener('click', () => {
+      this.dispatchEvent(new CustomEvent('button-clicked', {
+        bubbles: true,
+        composed: true,
+        detail: { id: this.getAttribute('id') }
+      }));
+    });
+  }
+}
+\`\`\`
+
+## Application Coordination (app.js)
+
+### Component Registration
+\`\`\`javascript
+import './components/user-card.js';
+import './components/custom-button.js';
+\`\`\`
+
+### Application State
+\`\`\`javascript
+class AppState {
+  constructor() {
+    this.data = [];
+    this.listeners = [];
+  }
+
+  subscribe(callback) {
+    this.listeners.push(callback);
+  }
+
+  setState(newState) {
+    this.data = newState;
+    this.notify();
+  }
+
+  notify() {
+    this.listeners.forEach(callback => callback(this.data));
+  }
+}
+\`\`\`
+
+### Component Communication
+\`\`\`javascript
+document.addEventListener('button-clicked', (e) => {
+  // Handle component events
+});
+\`\`\`
+
+## Project Specification Management
+
+You MUST maintain the \`project.spec.md\` file to track project evolution:
+
+### When Creating a New Project
+1. Ask user to clarify MVP scope
+2. Create initial \`project.spec.md\` with:
+   - Overview of what the project is
+   - Current scope (MVP features)
+   - Planned enhancements (future features)
+   - Technical notes (architecture decisions)
+   - Changelog entry for initial creation
+
+### After Each Feature Implementation
+1. Update \`project.spec.md\`:
+   - Move completed items from "Current Scope" to "Completed Features"
+   - Add newly discovered features to "Planned Enhancements"
+   - Update "Files" section if structure changed
+   - Add any technical notes or decisions made
+   - **Add changelog entry** documenting what changed
+
+### When User Requests New Features
+1. Add to "Planned Enhancements" section
+2. If starting work immediately, move to "Current Scope"
+3. Update "Last Updated" field
+4. **Add changelog entry** noting the new feature request
+
+### Keep It Concise
+- Specification should be brief (1-2 pages max)
+- Focus on what's important for context
+- Don't duplicate code or implementation details
+- Use bullet points and clear sections
 
 ## Rules
 
-- Always keep \`index.html\` as the entrypoint.
-- Every new file must be referenced from \`index.html\` (directly or via \`src/main.js\`).
-- Prefer ES modules and \`type="module"\` scripts.
-- One file per component; avoid multi-file component splits unless requested.
-- Return complete files (no TODOs or placeholders).
-- Prefer semantic HTML for layout (header, main, nav, section, footer).
-- Use CSS Grid and Flexbox for layout; avoid table-based layout.
-- Create reusable UI pieces as Web Components in \`src/components/\` and import them in \`src/main.js\`.
+- Always keep \`index.html\` as the entrypoint
+- Every new file must be referenced from \`index.html\` (directly or via \`src/app.js\`)
+- Prefer ES modules and \`type="module"\` scripts
+- One file per component; avoid multi-file component splits unless requested
+- Return complete files (no TODOs or placeholders)
+- Prefer semantic HTML for layout
+- Use CSS Grid and Flexbox for layout
+- Create reusable UI pieces as Web Components in \`src/components/\`
 `;
+  }
+
+  buildProjectSpecification(projectName, projectDescription = "") {
+    const name = projectName || "Project";
+    const desc = projectDescription || `A web application built with ${name}`;
+    const timestamp = new Date().toISOString().split("T")[0];
+
+    return `# Project Specification: ${name}
+
+## Overview
+${desc}
+
+## Current Status
+**Phase**: MVP
+**Last Updated**: ${timestamp}
+
+## Completed Features
+None yet - project just created
+
+## Current Scope (In Progress)
+- [ ] Initial project setup
+- [ ] Basic application structure
+
+## Planned Enhancements
+
+### High Priority
+(Features will be added as project evolves)
+
+### Medium Priority
+(Features will be added as project evolves)
+
+### Future Considerations
+(Features will be added as project evolves)
+
+## Technical Notes
+- Using Web Components for modularity
+- No-build workflow - runs directly in browser
+- ES modules for component organization
+
+## Files
+- \`project.spec.md\` - This specification document
+- \`project.guidance.md\` - LLM guidance for code generation
+
+## Changelog
+
+### ${timestamp} - Project Initialized
+**Changed**:
+- Created project structure
+- Set up initial specification
+
+**Added to Spec**:
+- Defined project overview
+- Created placeholder for MVP features
+- Established technical approach
+`;
+  }
+
+  buildSystemContext(project, files, manifest) {
+    if (!project || !manifest) return "";
+
+    const existingFiles = files
+      .filter((f) => !f.path.startsWith("project."))
+      .map((f) => f.path);
+
+    const filesByType = {
+      layout: existingFiles.filter((p) => p.endsWith(".html")),
+      styles: existingFiles.filter((p) => p.endsWith(".css")),
+      app: existingFiles.filter((p) => p === "src/app.js"),
+      components: existingFiles.filter((p) => p.startsWith("src/components/")),
+    };
+
+    const expectedFiles = ["index.html", "styles.css", "src/app.js"];
+    const missingFiles = expectedFiles.filter(
+      (f) => !existingFiles.includes(f),
+    );
+
+    const isNewProject = existingFiles.length === 0;
+    const hasExistingFiles = existingFiles.length > 0;
+
+    // Get specification content if it exists
+    const specFile = files.find((f) => f.path === "project.spec.md");
+    const specContent =
+      this.projectFileContentByProject[project.id]?.["project.spec.md"]
+        ?.content;
+
+    let context = `## Project Architecture\n\nComponent-first web application with separation of concerns.\n\n`;
+
+    // Include specification if available
+    if (specContent) {
+      context += `### Project Specification\n\n${specContent}\n\n`;
+    }
+
+    // Current files summary
+    context += `### Current Files (${existingFiles.length})\n\n`;
+    context += `Layout: ${filesByType.layout.join(", ") || "None"}\n`;
+    context += `Styles: ${filesByType.styles.join(", ") || "None"}\n`;
+    context += `App: ${filesByType.app.join(", ") || "None"}\n`;
+    context += `Components: ${filesByType.components.length} component(s)\n`;
+    if (filesByType.components.length > 0) {
+      context +=
+        filesByType.components.map((c) => `  - ${c}`).join("\n") + "\n";
+    }
+    context += "\n";
+
+    // Missing files warning
+    if (missingFiles.length > 0) {
+      context += `### Missing Core Files\n${missingFiles.map((f) => `- ${f}`).join("\n")}\n\n`;
+    }
+
+    // Development approach guidance
+    context += `### Development Approach\n\n`;
+    if (isNewProject) {
+      context += `**New Project**: Start with MVP. Only generate core files needed for basic functionality.
+- Suggest scope before building
+- Use placeholder data instead of complex state
+- Defer advanced features for later iterations\n\n`;
+    }
+
+    if (hasExistingFiles) {
+      context += `**Existing Project**: Update only what's needed.
+- Generate ONLY files that need changes
+- Reference existing files by path (don't regenerate)
+- Add features incrementally\n\n`;
+    }
+
+    // File manifest
+    context += `### File Manifest\n${JSON.stringify(manifest, null, 2)}\n\n`;
+
+    context += `**Important**: Generate files using structured format (File: path followed by code block).\n`;
+    if (hasExistingFiles) {
+      context += `Only include files you are creating or modifying.`;
+    }
+
+    return context;
   }
 
   buildPreviewUrl(projectId) {
@@ -410,9 +773,21 @@ Instructions:
         language: "markdown",
       });
     }
+    const spec = files.find((item) => item.path === "project.spec.md");
+    if (!spec) {
+      await upsertProjectFile(project.id, {
+        path: "project.spec.md",
+        content: this.buildProjectSpecification(
+          project.name,
+          project.description,
+        ),
+        language: "markdown",
+      });
+    }
     const refreshed = await fetchProjectFiles(project.id);
     this.projectFilesByProject[project.id] = refreshed;
     await this.ensureProjectFileContent(project.id, "project.guidance.md");
+    await this.ensureProjectFileContent(project.id, "project.spec.md");
   }
 
   async ensureProjectFileContent(projectId, path) {
@@ -469,10 +844,22 @@ Instructions:
         pinned: true,
       });
     }
+    const spec = files.find((file) => file.path === "project.spec.md");
+    if (spec) {
+      root.children.push({
+        name: "project.spec.md",
+        type: "file",
+        path: "project.spec.md",
+        language: spec.language || "markdown",
+        size: spec.size || 0,
+        pinned: true,
+      });
+    }
     files.forEach((file) => {
       if (
         file.path === "project.manifest.json" ||
-        file.path === "project.guidance.md"
+        file.path === "project.guidance.md" ||
+        file.path === "project.spec.md"
       )
         return;
       const parts = file.path.split("/").filter(Boolean);
@@ -518,21 +905,56 @@ Instructions:
     const filePattern =
       /^(?:\s*(?:File|Path)\s*[:\-]\s*|\/\/\s*File:\s*|\/\*\s*File:\s*|<!--\s*File:\s*)(.+?)(?:\s*-->|\s*\*\/)?$/i;
 
+    // Validate and sanitize file path
+    const validatePath = (path) => {
+      if (!path) return null;
+
+      // Remove any leading/trailing whitespace
+      path = path.trim();
+
+      // Reject paths with directory traversal
+      if (path.includes("..")) {
+        console.warn(
+          `[extractFiles] Rejected path with directory traversal: ${path}`,
+        );
+        return null;
+      }
+
+      // Reject absolute paths
+      if (path.startsWith("/")) {
+        console.warn(`[extractFiles] Rejected absolute path: ${path}`);
+        return null;
+      }
+
+      // Normalize path separators
+      path = path.replace(/\\/g, "/");
+
+      return path;
+    };
+
     const flushFence = () => {
       if (buffer.length) {
         let resolvedPath = pendingPath;
         if (!resolvedPath) {
           if (fenceLang === "html") resolvedPath = "index.html";
           if (fenceLang === "css") resolvedPath = "styles.css";
+          if (fenceLang === "markdown" || fenceLang === "md") {
+            // Don't auto-assign markdown files
+            resolvedPath = null;
+          }
           if (
             fenceLang === "js" ||
             fenceLang === "javascript" ||
             fenceLang === "ts" ||
             fenceLang === "typescript"
           ) {
-            resolvedPath = "app.js";
+            resolvedPath = "src/app.js";
           }
         }
+
+        // Validate the path
+        resolvedPath = validatePath(resolvedPath);
+
         if (resolvedPath) {
           files.push({
             path: resolvedPath,
@@ -847,19 +1269,22 @@ Instructions:
     const projectContext = conversationId
       ? this.projectByConversation[conversationId]
       : null;
+    const projectFiles = projectContext
+      ? this.projectFilesByProject[projectContext.id] || []
+      : [];
     const projectManifest = projectContext
-      ? this.buildProjectManifest(
-          projectContext,
-          this.projectFilesByProject[projectContext.id] || [],
-        )
+      ? this.buildProjectManifest(projectContext, projectFiles)
       : null;
-    const systemContext = projectManifest
-      ? `Project files (source of truth):\n${JSON.stringify(
-          projectManifest,
-          null,
-          2,
-        )}\n\nAll new files must be linked from the entry point. You may split HTML, CSS, and JS into separate files, but ensure index.html references them.`
-      : "";
+
+    // Ensure spec file is loaded before building context
+    if (projectContext && projectContext.id) {
+      await this.ensureProjectFileContent(projectContext.id, "project.spec.md");
+    }
+
+    const systemContext =
+      projectContext && projectManifest
+        ? this.buildSystemContext(projectContext, projectFiles, projectManifest)
+        : "";
     const payload = {
       model: this.activeModel,
       messages: [
