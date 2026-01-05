@@ -37,24 +37,68 @@ class OllamaProjectView extends BaseComponent {
   attachEventListeners() {
     const fileTree = this.shadowRoot?.querySelector("ollama-file-tree");
     if (fileTree) {
-      fileTree.addEventListener("file-selected", (event) => {
-        const path = event.detail?.path;
-        if (path) {
-          this.setAttribute("selected-path", path);
-          this.emit("file-selected", { path });
-        }
-      });
-      fileTree.addEventListener("expanded-change", (event) => {
-        const expanded = event.detail?.expanded || [];
-        this.expanded = JSON.stringify(expanded);
-      });
+      // Create bound handlers only once
+      if (!this._boundFileSelectedHandler) {
+        this._boundFileSelectedHandler = (event) => {
+          const path = event.detail?.path;
+          if (path) {
+            this.setAttribute("selected-path", path);
+            this.emit("file-selected", { path });
+          }
+        };
+      }
+      if (!this._boundExpandedChangeHandler) {
+        this._boundExpandedChangeHandler = (event) => {
+          const expanded = event.detail?.expanded || [];
+          this.expanded = JSON.stringify(expanded);
+        };
+      }
+
+      // Remove from previous fileTree if it exists
+      if (this._currentFileTree && this._currentFileTree !== fileTree) {
+        this._currentFileTree.removeEventListener(
+          "file-selected",
+          this._boundFileSelectedHandler,
+        );
+        this._currentFileTree.removeEventListener(
+          "expanded-change",
+          this._boundExpandedChangeHandler,
+        );
+      }
+
+      // Add to current fileTree
+      fileTree.addEventListener(
+        "file-selected",
+        this._boundFileSelectedHandler,
+      );
+      fileTree.addEventListener(
+        "expanded-change",
+        this._boundExpandedChangeHandler,
+      );
+      this._currentFileTree = fileTree;
     }
 
     const downloadButton = this.shadowRoot?.querySelector(".download-button");
     if (downloadButton) {
-      downloadButton.addEventListener("click", () => {
-        this.emit("project-download");
-      });
+      if (!this._boundDownloadHandler) {
+        this._boundDownloadHandler = () => {
+          this.emit("project-download");
+        };
+      }
+
+      // Remove from previous button if it exists
+      if (
+        this._currentDownloadButton &&
+        this._currentDownloadButton !== downloadButton
+      ) {
+        this._currentDownloadButton.removeEventListener(
+          "click",
+          this._boundDownloadHandler,
+        );
+      }
+
+      downloadButton.addEventListener("click", this._boundDownloadHandler);
+      this._currentDownloadButton = downloadButton;
     }
   }
 
@@ -124,7 +168,7 @@ class OllamaProjectView extends BaseComponent {
 
         .main {
           padding: var(--spacing-sm);
-          overflow: hidden;
+          overflow: auto;
         }
 
         .download-button {
@@ -168,6 +212,7 @@ class OllamaProjectView extends BaseComponent {
               language="${fileLanguage}"
               size="${fileSize}"
               lines="${fileLines}"
+              expanded
               ${loading ? "loading" : ""}
             ></ollama-file-display>
           </slot>

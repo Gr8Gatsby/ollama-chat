@@ -156,9 +156,18 @@ class OllamaFileDisplay extends BaseComponent {
           overflow: hidden;
         }
 
+        .container {
+          display: flex;
+          flex-direction: column;
+          height: 100%;
+        }
+
         .body {
           position: relative;
           flex: 1;
+          min-height: 0;
+          display: flex;
+          flex-direction: column;
         }
 
         .header {
@@ -190,6 +199,8 @@ class OllamaFileDisplay extends BaseComponent {
           line-height: 1.6;
           white-space: pre;
           overflow: auto;
+          flex: 1;
+          min-height: 0;
         }
 
         .loading {
@@ -266,6 +277,7 @@ class OllamaFileDisplay extends BaseComponent {
           color: #ef4444;
         }
       </style>
+      <div class="container">
       <div class="header">
         <div class="meta">
           <ollama-text variant="label">${path}</ollama-text>
@@ -298,6 +310,7 @@ class OllamaFileDisplay extends BaseComponent {
                </div>`
             : ""
         }
+      </div>
       </div>
     `;
 
