@@ -6,7 +6,7 @@ import "../base/ollama-tooltip.js";
 
 class OllamaLivePreview extends BaseComponent {
   static get observedAttributes() {
-    return ["srcdoc", "title", "error"];
+    return ["src", "srcdoc", "title", "error", "chromeless"];
   }
 
   constructor() {
@@ -20,27 +20,49 @@ class OllamaLivePreview extends BaseComponent {
     }
   }
 
+  connectedCallback() {
+    super.connectedCallback();
+    this.attachEventListeners();
+  }
+
   attachEventListeners() {
     const reloadButton = this.shadowRoot?.querySelector(".reload-button");
-    if (reloadButton) {
-      reloadButton.addEventListener("click", () => {
-        this.reload();
-      });
+    if (reloadButton && !this._reloadHandler) {
+      this._reloadHandler = () => this.reload();
+      reloadButton.addEventListener("click", this._reloadHandler);
     }
   }
 
   reload() {
     const iframe = this.shadowRoot?.querySelector("iframe");
     if (!iframe) return;
-    const srcdoc = this.getAttribute("srcdoc") || "";
-    iframe.srcdoc = srcdoc;
+
+    const src = this.getAttribute("src");
+    const srcdoc = this.getAttribute("srcdoc");
+
+    if (src) {
+      // For src, we reload by appending a timestamp
+      const url = new URL(src, window.location.origin);
+      url.searchParams.set("t", Date.now().toString());
+      iframe.src = url.toString();
+    } else if (srcdoc) {
+      iframe.srcdoc = srcdoc;
+    }
+
     this.emit("preview-reload");
+  }
+
+  captureScreenshot() {
+    // TODO: Implement screenshot functionality
+    return Promise.resolve(null);
   }
 
   render() {
     const title = this.getAttribute("title") || "Live preview";
+    const src = this.getAttribute("src") || "";
     const srcdoc = this.getAttribute("srcdoc") || "";
     const error = this.getAttribute("error") || "";
+    const chromeless = this.hasAttribute("chromeless");
 
     this.shadowRoot.innerHTML = `
       <style>
@@ -50,10 +72,13 @@ class OllamaLivePreview extends BaseComponent {
         :host {
           display: block;
           height: 100%;
+          background: var(--color-bg-primary);
+        }
+
+        :host(:not([chromeless])) {
           border: 1px solid var(--color-border);
           border-radius: var(--radius-lg);
           overflow: hidden;
-          background: var(--color-bg-primary);
         }
 
         .header {
@@ -64,9 +89,13 @@ class OllamaLivePreview extends BaseComponent {
           border-bottom: 1px solid var(--color-border);
         }
 
+        :host([chromeless]) .header {
+          display: none;
+        }
+
         .frame {
           position: relative;
-          height: calc(100% - 40px);
+          height: ${chromeless ? "100%" : "calc(100% - 40px)"};
         }
 
         iframe {
@@ -106,7 +135,7 @@ class OllamaLivePreview extends BaseComponent {
         <iframe
           title="${this.escapeAttribute(title)}"
           sandbox="allow-scripts allow-same-origin"
-          srcdoc="${this.escapeAttribute(srcdoc)}"
+          ${src ? `src="${this.escapeAttribute(src)}"` : `srcdoc="${this.escapeAttribute(srcdoc)}"`}
         ></iframe>
         ${
           error
