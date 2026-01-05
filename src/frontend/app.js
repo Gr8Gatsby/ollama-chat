@@ -1278,6 +1278,8 @@ Instructions:
         (entry) => entry.id === this.activeConversationId,
       ) || this.conversations[0];
     const chatLabel = activeConversation?.title || "Chat";
+    const messageCount = activeConversation?.messageCount || 0;
+    const tokenCount = activeConversation?.tokenCount || 0;
     const headerLabel = showProject ? `Project for ${chatLabel}` : chatLabel;
     const pendingConversation = this.pendingDeleteConversation
       ? this.conversations.find(
@@ -1369,8 +1371,24 @@ Instructions:
             <ollama-sidebar-user name="Kevin Hill" logged-in></ollama-sidebar-user>
           </div>
         </nav>
-        <header slot="header" aria-label="App bar">
+        <header slot="header" aria-label="App bar" style="display: flex; align-items: center; gap: 12px;">
           <ollama-text variant="label">${this.escapeAttribute(headerLabel)}</ollama-text>
+          ${
+            !showProject && activeConversation
+              ? `
+            <div style="display: flex; align-items: center; gap: 8px; color: var(--color-text-secondary);">
+              <div style="display: flex; align-items: center; gap: 4px;">
+                <ollama-icon name="messages-square" size="xs"></ollama-icon>
+                <ollama-text variant="caption" color="muted">${messageCount > 99 ? "99+" : messageCount}</ollama-text>
+              </div>
+              <div style="display: flex; align-items: center; gap: 4px;">
+                <ollama-icon name="ticket" size="xs"></ollama-icon>
+                <ollama-text variant="caption" color="muted">${tokenCount < 1000 ? tokenCount : Math.floor(tokenCount / 1000) + "K"}</ollama-text>
+              </div>
+            </div>
+          `
+              : ""
+          }
         </header>
         ${
           showProject

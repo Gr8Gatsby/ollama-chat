@@ -165,6 +165,18 @@ class OllamaConversationItem extends BaseComponent {
     }
   }
 
+  abbreviateNumber(num) {
+    if (num < 1000) return num.toString();
+    if (num < 1000000) return Math.floor(num / 1000) + "K";
+    if (num < 1000000000) return Math.floor(num / 1000000) + "M";
+    return Math.floor(num / 1000000000) + "B";
+  }
+
+  abbreviateMessageCount(num) {
+    if (num > 99) return "99+";
+    return num.toString();
+  }
+
   render() {
     const title =
       this.getAttribute("conversation-title") || this._title || "Untitled chat";
@@ -188,52 +200,79 @@ class OllamaConversationItem extends BaseComponent {
         }
 
         .item {
-          display: grid;
-          grid-template-columns: 1fr auto;
-          gap: var(--spacing-sm);
+          display: flex;
           align-items: center;
+          gap: var(--spacing-md);
           padding: var(--spacing-xs) var(--spacing-sm);
           border-radius: var(--radius-md);
           background: ${selected ? "var(--color-bg-secondary)" : "transparent"};
-        }
-
-        .item-main {
-          display: flex;
-          flex-direction: column;
-          gap: var(--spacing-xs);
-          align-items: flex-start;
-          border: none;
-          background: transparent;
-          text-align: left;
-          cursor: pointer;
-          width: 100%;
-        }
-
-        .title-row {
-          display: inline-flex;
-          align-items: center;
-          gap: var(--spacing-xs);
-          width: 100%;
-        }
-
-        .title-text {
           position: relative;
         }
 
         .meta-row {
-          display: inline-flex;
+          display: flex;
           align-items: center;
           gap: var(--spacing-xs);
           color: var(--color-text-secondary);
+          flex-shrink: 0;
+        }
+
+        .meta-item {
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          min-width: 42px;
+        }
+
+        .item-main {
+          display: flex;
+          align-items: center;
+          gap: var(--spacing-xs);
+          border: none;
+          background: transparent;
+          text-align: left;
+          cursor: pointer;
+          flex: 1;
+          min-width: 0;
+        }
+
+        .title-row {
+          display: flex;
+          align-items: center;
+          gap: var(--spacing-xs);
+          flex: 1;
+          min-width: 0;
+        }
+
+        .title-text {
+          position: relative;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          flex: 1;
+        }
+
+        :host([selected]) .title-text ollama-text {
+          font-weight: 600;
+        }
+
+        :host([selected]) .title-text {
+          font-weight: 600;
         }
 
         .action-slot {
+          position: absolute;
+          right: var(--spacing-sm);
+          top: 50%;
+          transform: translateY(-50%);
           display: inline-flex;
           align-items: center;
-          gap: var(--spacing-xs);
+          gap: 4px;
           opacity: 0;
           pointer-events: none;
           transition: opacity var(--transition-fast);
+          background: ${selected ? "var(--color-bg-secondary)" : "var(--color-bg-primary)"};
+          padding-left: var(--spacing-sm);
         }
 
         .action-button {
@@ -265,12 +304,6 @@ class OllamaConversationItem extends BaseComponent {
                   ></ollama-input>
                   ${unread > 0 ? `<ollama-badge size="sm">${unread}</ollama-badge>` : ""}
                 </div>
-                <div class="meta-row">
-                  <ollama-badge size="sm">${messageCount}</ollama-badge>
-                  <ollama-text variant="caption" color="muted">messages</ollama-text>
-                  <ollama-badge size="sm">${tokenCount}</ollama-badge>
-                  <ollama-text variant="caption" color="muted">tokens</ollama-text>
-                </div>
               </div>`
             : `<button
                 class="item-main"
@@ -279,16 +312,24 @@ class OllamaConversationItem extends BaseComponent {
               >
                 <div class="title-row">
                   <span class="title-text">
-                    <ollama-text variant="label">${title}</ollama-text>
-                    <ollama-tooltip position="bottom-right">${title}</ollama-tooltip>
+                    <ollama-text variant="label" ${selected ? 'weight="semibold" color="primary"' : 'color="secondary"'}>${title}</ollama-text>
+                    <ollama-tooltip position="bottom-right">
+                      <div style="display: flex; flex-direction: column; gap: 4px;">
+                        <div>${title}</div>
+                        <div style="display: flex; align-items: center; gap: 8px; font-size: 11px; opacity: 0.8;">
+                          <span style="display: flex; align-items: center; gap: 4px;">
+                            <ollama-icon name="messages-square" size="xs"></ollama-icon>
+                            ${this.abbreviateMessageCount(messageCount)} messages
+                          </span>
+                          <span style="display: flex; align-items: center; gap: 4px;">
+                            <ollama-icon name="ticket" size="xs"></ollama-icon>
+                            ${this.abbreviateNumber(tokenCount)} tokens
+                          </span>
+                        </div>
+                      </div>
+                    </ollama-tooltip>
                   </span>
                   ${unread > 0 ? `<ollama-badge size="sm">${unread}</ollama-badge>` : ""}
-                </div>
-                <div class="meta-row">
-                  <ollama-badge size="sm">${messageCount}</ollama-badge>
-                  <ollama-text variant="caption" color="muted">messages</ollama-text>
-                  <ollama-badge size="sm">${tokenCount}</ollama-badge>
-                  <ollama-text variant="caption" color="muted">tokens</ollama-text>
                 </div>
               </button>`
         }
