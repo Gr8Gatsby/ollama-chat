@@ -43,6 +43,7 @@ class OllamaFileDisplay extends BaseComponent {
 
   constructor() {
     super();
+    this.copySuccess = false;
     this.render();
   }
 
@@ -50,6 +51,11 @@ class OllamaFileDisplay extends BaseComponent {
     if (oldValue !== newValue) {
       this.render();
     }
+  }
+
+  connectedCallback() {
+    super.connectedCallback();
+    this.attachEventListeners();
   }
 
   getContent() {
@@ -61,15 +67,28 @@ class OllamaFileDisplay extends BaseComponent {
   attachEventListeners() {
     const copyButton = this.shadowRoot?.querySelector(".copy-button");
     if (!copyButton) return;
-    copyButton.addEventListener("click", async () => {
-      const code = this.getContent();
-      try {
-        await navigator.clipboard?.writeText(code);
-        this.emit("copy-file", { content: code });
-      } catch {
-        this.emit("copy-file", { content: code, failed: true });
-      }
-    });
+
+    if (!this._copyHandler) {
+      this._copyHandler = async () => {
+        const code = this.getContent();
+        try {
+          await navigator.clipboard?.writeText(code);
+          this.copySuccess = true;
+          this.updateCopyButton();
+          this.emit("copy-file", { content: code });
+
+          // Reset after 2 seconds
+          setTimeout(() => {
+            this.copySuccess = false;
+            this.updateCopyButton();
+          }, 2000);
+        } catch {
+          this.emit("copy-file", { content: code, failed: true });
+        }
+      };
+    }
+
+    copyButton.addEventListener("click", this._copyHandler);
 
     const toggleButton = this.shadowRoot?.querySelector(".toggle-button");
     if (toggleButton) {
@@ -97,6 +116,22 @@ class OllamaFileDisplay extends BaseComponent {
       md: "markdown",
     };
     return mapping[normalized] || normalized;
+  }
+
+  updateCopyButton() {
+    const copyButton = this.shadowRoot?.querySelector(".copy-button");
+    const icon = copyButton?.querySelector("ollama-icon");
+    const tooltip = copyButton?.querySelector("ollama-tooltip");
+
+    if (icon && tooltip) {
+      if (this.copySuccess) {
+        icon.setAttribute("name", "check");
+        tooltip.textContent = "Copied!";
+      } else {
+        icon.setAttribute("name", "copy");
+        tooltip.textContent = "Copy";
+      }
+    }
   }
 
   formatBytes(bytes) {
@@ -137,8 +172,7 @@ class OllamaFileDisplay extends BaseComponent {
     const loading = this.hasAttribute("loading");
     const content = this.getContent();
     const expanded = this.hasAttribute("expanded");
-    const derivedLines =
-      lines || String(content.split("\n").filter(Boolean).length || 0);
+    const derivedLines = lines || String(content.split("\n").length || 0);
     const derivedSize =
       size || this.formatBytes(new TextEncoder().encode(content).length);
 

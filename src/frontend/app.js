@@ -1348,7 +1348,7 @@ Instructions:
                            )}"
                            file-lines="${this.escapeAttribute(
                              selectedFile?.content
-                               ? selectedFile.content.split("\\n").length
+                               ? selectedFile.content.split("\n").length
                                : "",
                            )}"
                            file-content="${this.escapeAttribute(
