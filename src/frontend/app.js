@@ -577,6 +577,27 @@ None yet - project just created
 `;
   }
 
+  extractFileDescriptionsFromSpec(specContent) {
+    const descriptions = {};
+    if (!specContent) return descriptions;
+
+    // Look for the Files section in the spec
+    const filesSection = specContent.match(/## Files\n([\s\S]*?)(?=\n##|$)/);
+    if (!filesSection) return descriptions;
+
+    // Parse file entries like: - `path/to/file.js` - Description here
+    const filePattern = /^-\s*`([^`]+)`\s*-\s*(.+)$/gm;
+    let match;
+
+    while ((match = filePattern.exec(filesSection[1])) !== null) {
+      const path = match[1].trim();
+      const desc = match[2].trim();
+      descriptions[path] = desc;
+    }
+
+    return descriptions;
+  }
+
   buildSystemContext(project, files, manifest) {
     if (!project || !manifest) return "";
 
@@ -621,17 +642,55 @@ None yet - project just created
       context += `### Project Specification\n\n${specContent}\n\n`;
     }
 
-    // Current files summary
+    // Current files with descriptions
     context += `### Current Files (${existingFiles.length})\n\n`;
-    context += `Layout: ${filesByType.layout.join(", ") || "None"}\n`;
-    context += `Styles: ${filesByType.styles.join(", ") || "None"}\n`;
-    context += `App: ${filesByType.app.join(", ") || "None"}\n`;
-    context += `Components: ${filesByType.components.length} component(s)\n`;
-    if (filesByType.components.length > 0) {
-      context +=
-        filesByType.components.map((c) => `  - ${c}`).join("\n") + "\n";
+
+    if (existingFiles.length > 0) {
+      // Get file descriptions from spec if available
+      const fileDescriptions =
+        this.extractFileDescriptionsFromSpec(specContent);
+
+      // Organize files by type with descriptions
+      if (filesByType.layout.length > 0) {
+        context += `**Layout Files:**\n`;
+        filesByType.layout.forEach((path) => {
+          const desc = fileDescriptions[path] || "Application layout";
+          context += `  - \`${path}\` - ${desc}\n`;
+        });
+        context += "\n";
+      }
+
+      if (filesByType.styles.length > 0) {
+        context += `**Styles:**\n`;
+        filesByType.styles.forEach((path) => {
+          const desc = fileDescriptions[path] || "Global styles";
+          context += `  - \`${path}\` - ${desc}\n`;
+        });
+        context += "\n";
+      }
+
+      if (filesByType.app.length > 0) {
+        context += `**Application:**\n`;
+        filesByType.app.forEach((path) => {
+          const desc =
+            fileDescriptions[path] || "Application coordination and state";
+          context += `  - \`${path}\` - ${desc}\n`;
+        });
+        context += "\n";
+      }
+
+      if (filesByType.components.length > 0) {
+        context += `**Components (${filesByType.components.length}):**\n`;
+        filesByType.components.forEach((path) => {
+          const componentName = path.split("/").pop().replace(".js", "");
+          const desc = fileDescriptions[path] || `${componentName} component`;
+          context += `  - \`${path}\` - ${desc}\n`;
+        });
+        context += "\n";
+      }
+    } else {
+      context += `No files yet - new project ready for initialization.\n\n`;
     }
-    context += "\n";
 
     // Missing files warning
     if (missingFiles.length > 0) {
