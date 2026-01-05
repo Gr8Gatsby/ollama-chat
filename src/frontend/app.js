@@ -72,6 +72,7 @@ class OllamaFrontendApp extends HTMLElement {
         this.models = models.map((model) => ({
           label: model.label,
           value: model.value,
+          supportsVision: model.supportsVision,
         }));
         this.activeModel = this.models[0].value;
         this.scheduleRender();
@@ -79,6 +80,17 @@ class OllamaFrontendApp extends HTMLElement {
     } catch (error) {
       console.warn("[frontend] Failed to load models:", error);
     }
+  }
+
+  getActiveModelInfo() {
+    return (
+      this.models.find((m) => m.value === this.activeModel) || this.models[0]
+    );
+  }
+
+  activeModelSupportsVision() {
+    const modelInfo = this.getActiveModelInfo();
+    return modelInfo?.supportsVision || false;
   }
 
   scheduleRender() {
@@ -122,7 +134,7 @@ class OllamaFrontendApp extends HTMLElement {
           id: item.id,
           title: item.title || "New chat",
           model: item.model || this.activeModel,
-          timestamp: item.updatedAt ? "Just now" : "",
+          timestamp: item.updatedAt || Date.now(),
           messageCount: item.messageCount || 0,
           tokenCount: item.tokenCount || 0,
           unread: 0,
@@ -148,7 +160,7 @@ class OllamaFrontendApp extends HTMLElement {
           id: fallbackId,
           title: "New chat",
           model: this.activeModel,
-          timestamp: "Just now",
+          timestamp: Date.now(),
           messageCount: 0,
           tokenCount: 0,
           unread: 0,
@@ -186,8 +198,9 @@ class OllamaFrontendApp extends HTMLElement {
         role: msg.role,
         content: msg.content,
         model: msg.model || this.activeModel,
-        timestamp: "Just now",
+        timestamp: msg.createdAt || Date.now(),
         tokens: msg.tokens && Number(msg.tokens) > 0 ? String(msg.tokens) : "",
+        images: msg.images ? JSON.parse(msg.images) : undefined,
       }));
     } catch (error) {
       console.warn("[frontend] Failed to load messages:", error);
@@ -445,8 +458,23 @@ Instructions:
         pinned: true,
       });
     }
+    const guidance = files.find((file) => file.path === "project.guidance.md");
+    if (guidance) {
+      root.children.push({
+        name: "project.guidance.md",
+        type: "file",
+        path: "project.guidance.md",
+        language: guidance.language || "markdown",
+        size: guidance.size || 0,
+        pinned: true,
+      });
+    }
     files.forEach((file) => {
-      if (file.path === "project.manifest.json") return;
+      if (
+        file.path === "project.manifest.json" ||
+        file.path === "project.guidance.md"
+      )
+        return;
       const parts = file.path.split("/").filter(Boolean);
       let currentPath = "";
       let parent = root;
@@ -587,10 +615,83 @@ Instructions:
       (item) => item.id === conversationId,
     );
     if (!conversation) return;
-    conversation.timestamp = "Just now";
+    conversation.timestamp = Date.now();
     conversation.messageCount = this.activeMessages.length;
     conversation.tokenCount =
       (conversation.tokenCount || 0) + (tokenDelta || 0);
+  }
+
+  async handleProjectDownload() {
+    if (!this.activeConversationId) return;
+
+    const project = this.projectByConversation[this.activeConversationId];
+    if (!project?.id) return;
+
+    const projectFiles = this.projectFilesByProject[project.id] || [];
+    const messages =
+      this.messagesByConversation[this.activeConversationId] || [];
+
+    try {
+      // Dynamically import JSZip
+      const JSZip = (
+        await import("https://cdn.jsdelivr.net/npm/jszip@3.10.1/+esm")
+      ).default;
+      const zip = new JSZip();
+
+      // Add project files
+      await this.ensureAllProjectFilesContent(project.id);
+      const fileContents = this.projectFileContentByProject[project.id] || {};
+
+      for (const file of projectFiles) {
+        const fileData = fileContents[file.path];
+        const content = fileData?.content || "";
+        zip.file(file.path, content);
+      }
+
+      // Create chat folder and add conversation
+      const chatFolder = zip.folder("chat");
+      const chatContent = this.formatChatForExport(messages, project.name);
+      chatFolder.file("conversation.md", chatContent);
+
+      // Generate zip file
+      const blob = await zip.generateAsync({ type: "blob" });
+
+      // Trigger download
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `${project.name || "project"}.zip`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error("Failed to download project:", error);
+    }
+  }
+
+  formatChatForExport(messages, projectName) {
+    let markdown = `# ${projectName || "Project"} - Chat Export\n\n`;
+    markdown += `Exported: ${new Date().toLocaleString()}\n\n`;
+    markdown += `---\n\n`;
+
+    for (const message of messages) {
+      const role = message.role === "user" ? "User" : "Assistant";
+      const timestamp = message.timestamp
+        ? new Date(message.timestamp).toLocaleString()
+        : "";
+
+      markdown += `## ${role}`;
+      if (timestamp) {
+        markdown += ` - ${timestamp}`;
+      }
+      if (message.model) {
+        markdown += ` (${message.model})`;
+      }
+      markdown += `\n\n`;
+      markdown += `${message.content}\n\n`;
+      markdown += `---\n\n`;
+    }
+
+    return markdown;
   }
 
   appendMessage(conversationId, message) {
@@ -630,6 +731,18 @@ Instructions:
     }
   }
 
+  async fileToBase64(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const base64 = reader.result.split(",")[1]; // Remove data:image/...;base64, prefix
+        resolve(base64);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+
   extractFilePreviewParts(content, fallbackLanguage = "html") {
     const fenceRegex = /```(\w+)?[^\n]*\n([\s\S]*?)```/;
     const match = content.match(fenceRegex);
@@ -648,7 +761,7 @@ Instructions:
     return { before, code, after, language };
   }
 
-  async handleSend(message) {
+  async handleSend(message, attachedFiles = []) {
     if (!message?.trim()) return;
     let conversationId = this.activeConversationId;
     if (!conversationId) {
@@ -659,12 +772,32 @@ Instructions:
         this.activeConversationId = conversationId;
       }
     }
+
+    // Process images: convert to base64
+    const images = [];
+    for (const fileData of attachedFiles) {
+      if (fileData.type.startsWith("image/")) {
+        try {
+          const base64 = await this.fileToBase64(fileData.file);
+          images.push(base64);
+        } catch (error) {
+          console.warn("[frontend] Failed to process image:", error);
+        }
+      }
+    }
+
     const userMessage = {
       id: `user-${Date.now()}`,
       role: "user",
       content: message,
-      timestamp: "Just now",
+      timestamp: Date.now(),
       model: this.activeModel,
+      images: images.length > 0 ? images : undefined,
+      attachedFiles: attachedFiles.map((f) => ({
+        name: f.name,
+        size: f.size,
+        type: f.type,
+      })),
     };
 
     this.appendMessage(conversationId, userMessage);
@@ -675,6 +808,17 @@ Instructions:
           role: "user",
           content: message,
           model: this.activeModel,
+          images: images.length > 0 ? JSON.stringify(images) : undefined,
+          attachedFiles:
+            attachedFiles.length > 0
+              ? JSON.stringify(
+                  attachedFiles.map((f) => ({
+                    name: f.name,
+                    size: f.size,
+                    type: f.type,
+                  })),
+                )
+              : undefined,
         });
         userMessage.id = messageId;
       } catch (error) {
@@ -686,7 +830,7 @@ Instructions:
       id: `assistant-${Date.now()}`,
       role: "assistant",
       content: "",
-      timestamp: "Just now",
+      timestamp: Date.now(),
       model: this.activeModel,
       streaming: true,
     };
@@ -727,10 +871,17 @@ Instructions:
               },
             ]
           : []),
-        ...this.activeMessages.map((msg) => ({
-          role: msg.role === "assistant" ? "assistant" : "user",
-          content: msg.content,
-        })),
+        ...this.activeMessages.map((msg) => {
+          const message = {
+            role: msg.role === "assistant" ? "assistant" : "user",
+            content: msg.content,
+          };
+          // Add images array if present (for multimodal models)
+          if (msg.images && msg.images.length > 0) {
+            message.images = msg.images;
+          }
+          return message;
+        }),
       ],
     };
 
@@ -800,13 +951,13 @@ Instructions:
   attachListeners() {
     const chatInput = this.querySelector("ollama-chat-input");
     chatInput?.addEventListener("send", (event) => {
-      this.handleSend(event.detail?.value);
+      this.handleSend(event.detail?.value, event.detail?.attachedFiles);
     });
     chatInput?.addEventListener("model-change", (event) => {
       const value = event.detail?.value;
       if (value) {
         this.activeModel = value;
-        this.scheduleRender();
+        // Don't re-render - the chat-input component handles its own update
       }
     });
 
@@ -903,7 +1054,7 @@ Instructions:
         id,
         title: "New chat",
         model: this.activeModel,
-        timestamp: "Just now",
+        timestamp: Date.now(),
         messageCount: 0,
         tokenCount: 0,
         unread: 0,
@@ -939,7 +1090,7 @@ Instructions:
                   id: newId,
                   title: "New chat",
                   model: this.activeModel,
-                  timestamp: "Just now",
+                  timestamp: Date.now(),
                   messageCount: 0,
                   tokenCount: 0,
                   unread: 0,
@@ -982,6 +1133,10 @@ Instructions:
         const state = this.getProjectState(this.activeConversationId);
         state.expanded = expanded;
         this.scheduleRender();
+      });
+
+      projectView.addEventListener("project-download", async () => {
+        await this.handleProjectDownload();
       });
     }
 
@@ -1123,6 +1278,8 @@ Instructions:
         (entry) => entry.id === this.activeConversationId,
       ) || this.conversations[0];
     const chatLabel = activeConversation?.title || "Chat";
+    const messageCount = activeConversation?.messageCount || 0;
+    const tokenCount = activeConversation?.tokenCount || 0;
     const headerLabel = showProject ? `Project for ${chatLabel}` : chatLabel;
     const pendingConversation = this.pendingDeleteConversation
       ? this.conversations.find(
@@ -1214,8 +1371,24 @@ Instructions:
             <ollama-sidebar-user name="Kevin Hill" logged-in></ollama-sidebar-user>
           </div>
         </nav>
-        <header slot="header" aria-label="App bar">
+        <header slot="header" aria-label="App bar" style="display: flex; align-items: center; gap: 12px;">
           <ollama-text variant="label">${this.escapeAttribute(headerLabel)}</ollama-text>
+          ${
+            !showProject && activeConversation
+              ? `
+            <div style="display: flex; align-items: center; gap: 8px; color: var(--color-text-secondary);">
+              <div style="display: flex; align-items: center; gap: 4px;">
+                <ollama-icon name="messages-square" size="xs"></ollama-icon>
+                <ollama-text variant="caption" color="muted">${messageCount > 99 ? "99+" : messageCount}</ollama-text>
+              </div>
+              <div style="display: flex; align-items: center; gap: 4px;">
+                <ollama-icon name="ticket" size="xs"></ollama-icon>
+                <ollama-text variant="caption" color="muted">${tokenCount < 1000 ? tokenCount : Math.floor(tokenCount / 1000) + "K"}</ollama-text>
+              </div>
+            </div>
+          `
+              : ""
+          }
         </header>
         ${
           showProject
@@ -1348,7 +1521,7 @@ Instructions:
                            )}"
                            file-lines="${this.escapeAttribute(
                              selectedFile?.content
-                               ? selectedFile.content.split("\\n").length
+                               ? selectedFile.content.split("\n").length
                                : "",
                            )}"
                            file-content="${this.escapeAttribute(

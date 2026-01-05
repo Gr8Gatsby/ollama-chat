@@ -34,6 +34,7 @@ class OllamaCodeBlock extends BaseComponent {
 
   constructor() {
     super();
+    this.copySuccess = false;
     this.render();
   }
 
@@ -52,15 +53,27 @@ class OllamaCodeBlock extends BaseComponent {
   attachEventListeners() {
     const button = this.shadowRoot?.querySelector(".copy-button");
     if (!button) return;
-    button.addEventListener("click", async () => {
-      const code = this.getCode();
-      try {
-        await navigator.clipboard?.writeText(code);
-        this.emit("copy", { code });
-      } catch {
-        this.emit("copy", { code, failed: true });
-      }
-    });
+
+    if (!this._copyHandler) {
+      this._copyHandler = async () => {
+        const code = this.getCode();
+        try {
+          await navigator.clipboard?.writeText(code);
+          this.copySuccess = true;
+          this.updateCopyButton();
+          this.emit("copy", { code });
+
+          setTimeout(() => {
+            this.copySuccess = false;
+            this.updateCopyButton();
+          }, 2000);
+        } catch {
+          this.emit("copy", { code, failed: true });
+        }
+      };
+    }
+
+    button.addEventListener("click", this._copyHandler);
 
     const toggle = this.shadowRoot?.querySelector(".toggle-button");
     if (toggle) {
@@ -71,6 +84,24 @@ class OllamaCodeBlock extends BaseComponent {
           this.setAttribute("expanded", "");
         }
       });
+    }
+  }
+
+  updateCopyButton() {
+    const copyButton = this.shadowRoot?.querySelector(".copy-button");
+    if (!copyButton) return;
+
+    const icon = copyButton.querySelector("ollama-icon");
+    const tooltip = copyButton.querySelector("ollama-tooltip");
+
+    if (icon && tooltip) {
+      if (this.copySuccess) {
+        icon.setAttribute("name", "check");
+        tooltip.textContent = "Copied!";
+      } else {
+        icon.setAttribute("name", "copy");
+        tooltip.textContent = "Copy";
+      }
     }
   }
 

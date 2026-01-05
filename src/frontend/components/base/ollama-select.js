@@ -7,12 +7,18 @@ import { BaseComponent } from "./base-component.js";
  *   value: Selected value
  *   disabled: Boolean attribute
  *   size: sm | md | lg (default: md)
+ *   variant: default | textlike (default: default)
  *
  * Usage: Add <option> elements as children
  * Example:
  *   <ollama-select value="opt1">
  *     <option value="opt1">Option 1</option>
  *     <option value="opt2">Option 2</option>
+ *   </ollama-select>
+ *
+ * Textlike variant: Appears as bold text until hovered/clicked
+ *   <ollama-select value="opt1" variant="textlike">
+ *     ...
  *   </ollama-select>
  */
 let selectIdCounter = 0;
@@ -23,6 +29,7 @@ export class OllamaSelect extends BaseComponent {
       "value",
       "disabled",
       "size",
+      "variant",
       "label",
       "aria-label",
       "aria-labelledby",
@@ -61,6 +68,7 @@ export class OllamaSelect extends BaseComponent {
     const value = this.getAttribute("value") || "";
     const disabled = this.getBooleanAttribute("disabled");
     const size = this.getAttribute("size") || "md";
+    const variant = this.getAttribute("variant") || "default";
     const labelText = this.getAttribute("label");
     const ariaLabel = this.getAttribute("aria-label");
     const ariaLabelledBy = this.getAttribute("aria-labelledby");
@@ -132,12 +140,33 @@ export class OllamaSelect extends BaseComponent {
           --select-padding-inline: var(--spacing-lg);
           --select-padding-right: calc(var(--spacing-xl) + var(--spacing-md));
         }
+
+        /* Textlike variant - appears as bold text until interacted with */
+        select.textlike {
+          border: none;
+          background: transparent;
+          font-weight: 600;
+          padding: var(--spacing-xs);
+          background-image: none;
+          border-radius: var(--radius-sm);
+        }
+
+        select.textlike:hover:not(:disabled),
+        select.textlike:focus {
+          background: var(--color-bg-secondary);
+          box-shadow: none;
+        }
+
+        :host([data-theme="dark"]) select.textlike:hover:not(:disabled),
+        :host([data-theme="dark"]) select.textlike:focus {
+          background: rgba(255, 255, 255, 0.08);
+        }
       </style>
       <div class="field" part="group">
         ${labelText ? `<span class="label-text" id="${labelId}" part="label">${labelText}</span>` : ""}
         <select
           id="${this.inputId}"
-          class="${size}"
+          class="${size} ${variant}"
           ${disabled ? "disabled" : ""}
           aria-disabled="${disabled ? "true" : "false"}"
           ${ariaLabel ? `aria-label="${ariaLabel}"` : ""}
