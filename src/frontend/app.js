@@ -861,8 +861,8 @@ Instructions:
     }
     const refreshed = await fetchProjectFiles(project.id);
     this.projectFilesByProject[project.id] = refreshed;
-    await this.ensureProjectFileContent(project.id, "project.guidance.md");
-    await this.ensureProjectFileContent(project.id, "project.spec.md");
+    // Note: We don't eagerly load guidance and spec here for performance
+    // They will be loaded on-demand when needed (e.g., when sending to LLM)
   }
 
   async ensureProjectFileContent(projectId, path) {
