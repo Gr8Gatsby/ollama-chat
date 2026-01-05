@@ -42,7 +42,12 @@ async function* readNdjsonStream(response) {
 function buildPrompt(messages = []) {
   return messages
     .map((msg) => {
-      const role = msg.role === "assistant" ? "Assistant" : "User";
+      const role =
+        msg.role === "assistant"
+          ? "Assistant"
+          : msg.role === "system"
+            ? "System"
+            : "User";
       return `${role}: ${msg.content}`;
     })
     .join("\n");

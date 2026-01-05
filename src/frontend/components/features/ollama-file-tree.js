@@ -78,22 +78,40 @@ class OllamaFileTree extends BaseComponent {
   attachEventListeners() {
     const tree = this.shadowRoot?.querySelector(".tree");
     if (!tree) return;
-    tree.addEventListener("click", (event) => {
-      const target = event.target.closest("[data-path]");
-      if (!target) return;
-      const path = target.getAttribute("data-path");
-      const type = target.getAttribute("data-type");
-      if (!path) return;
-      if (type === "directory") {
-        this.toggleDirectory(path);
-      } else {
-        this.emit("file-selected", { path });
-        this.setAttribute("selected", path);
-      }
-    });
+
+    // Create bound handler only once
+    if (!this._boundClickHandler) {
+      this._boundClickHandler = this.handleTreeClick.bind(this);
+    }
+
+    // Remove from previous tree element if it exists
+    if (this._currentTree && this._currentTree !== tree) {
+      this._currentTree.removeEventListener("click", this._boundClickHandler);
+    }
+
+    // Add to current tree element
+    tree.addEventListener("click", this._boundClickHandler);
+    this._currentTree = tree;
+  }
+
+  handleTreeClick(event) {
+    const pathTarget = event.target?.closest?.(".node");
+    if (!pathTarget) return;
+    const path = pathTarget.getAttribute("data-path");
+    const type = pathTarget.getAttribute("data-type");
+    if (!path) return;
+    if (type === "directory") {
+      this.toggleDirectory(path);
+    } else {
+      this.emit("file-selected", { path });
+      this.setAttribute("selected", path);
+    }
   }
 
   iconForNode(node) {
+    if (node.pinned) {
+      return "pin";
+    }
     if (node.type === "directory") {
       return this.isExpanded(node.path) ? "folder-open" : "folder";
     }
@@ -122,17 +140,19 @@ class OllamaFileTree extends BaseComponent {
     const depthClass = `depth-${Math.min(depth, 6)}`;
 
     return `
-      <div
-        class="node ${depthClass} ${selected ? "selected" : ""}"
-        data-path="${path}"
-        data-type="${node.type}"
-        role="treeitem"
-        aria-expanded="${isDirectory ? String(isExpanded) : "false"}"
-      >
-        <ollama-icon name="${this.iconForNode({ ...node, path })}" size="sm"></ollama-icon>
-        <ollama-text>${node.name}</ollama-text>
+      <div class="node-wrapper">
+        <div
+          class="node ${depthClass} ${selected ? "selected" : ""}"
+          data-path="${path}"
+          data-type="${node.type}"
+          role="treeitem"
+          aria-expanded="${isDirectory ? String(isExpanded) : "false"}"
+        >
+          <ollama-icon name="${this.iconForNode({ ...node, path })}" size="sm"></ollama-icon>
+          <ollama-text>${node.name}</ollama-text>
+        </div>
+        ${isExpanded ? `<div class="children">${children}</div>` : ""}
       </div>
-      ${isExpanded ? children : ""}
     `;
   }
 
@@ -152,6 +172,17 @@ class OllamaFileTree extends BaseComponent {
         }
 
         .tree {
+          display: flex;
+          flex-direction: column;
+          gap: var(--spacing-xxs, 2px);
+        }
+
+        .node-wrapper {
+          display: flex;
+          flex-direction: column;
+        }
+
+        .children {
           display: flex;
           flex-direction: column;
           gap: var(--spacing-xxs, 2px);

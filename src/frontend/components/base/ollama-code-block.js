@@ -1,4 +1,5 @@
 import { BaseComponent } from "./base-component.js";
+import "./ollama-badge.js";
 import "./ollama-button.js";
 import "./ollama-icon.js";
 import "./ollama-text.js";
@@ -28,7 +29,7 @@ async function ensurePrismLoaded() {
 
 class OllamaCodeBlock extends BaseComponent {
   static get observedAttributes() {
-    return ["language", "code"];
+    return ["language", "code", "expanded"];
   }
 
   constructor() {
@@ -60,6 +61,17 @@ class OllamaCodeBlock extends BaseComponent {
         this.emit("copy", { code, failed: true });
       }
     });
+
+    const toggle = this.shadowRoot?.querySelector(".toggle-button");
+    if (toggle) {
+      toggle.addEventListener("click", () => {
+        if (this.hasAttribute("expanded")) {
+          this.removeAttribute("expanded");
+        } else {
+          this.setAttribute("expanded", "");
+        }
+      });
+    }
   }
 
   async applyHighlight(languageKey, code) {
@@ -87,6 +99,9 @@ class OllamaCodeBlock extends BaseComponent {
     const language = this.getAttribute("language") || "text";
     const code = this.getCode();
     const languageKey = this.normalizeLanguage(language);
+    const expanded = this.hasAttribute("expanded");
+    const derivedLines = code ? code.split("\n").length : 0;
+    const derivedSize = this.formatBytes(new TextEncoder().encode(code).length);
 
     this.shadowRoot.innerHTML = `
       <style>
@@ -111,6 +126,12 @@ class OllamaCodeBlock extends BaseComponent {
           background: var(--color-bg-primary);
         }
 
+        .meta {
+          display: inline-flex;
+          align-items: center;
+          gap: var(--spacing-xs);
+        }
+
         .code {
           padding: var(--spacing-sm);
           font-family: var(--font-family-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
@@ -125,6 +146,16 @@ class OllamaCodeBlock extends BaseComponent {
           width: 24px;
           height: 24px;
           border-radius: 12px;
+        }
+
+        .toggle-button {
+          width: 24px;
+          height: 24px;
+          border-radius: 12px;
+        }
+
+        :host(:not([expanded])) .code {
+          display: none;
         }
 
         .token.comment,
@@ -180,11 +211,23 @@ class OllamaCodeBlock extends BaseComponent {
         }
       </style>
       <div class="header">
-        <ollama-text variant="caption" color="muted">${language}</ollama-text>
-        <ollama-button class="copy-button" variant="icon" aria-label="Copy code">
-          <ollama-icon name="copy" size="xs"></ollama-icon>
-          <ollama-tooltip>Copy</ollama-tooltip>
-        </ollama-button>
+        <div class="meta">
+          <ollama-text variant="caption" color="muted">${language}</ollama-text>
+          <ollama-badge size="sm">${derivedSize}</ollama-badge>
+          <ollama-badge size="sm">${derivedLines} lines</ollama-badge>
+        </div>
+        <div class="meta">
+          <ollama-button class="toggle-button" variant="icon" aria-label="${
+            expanded ? "Collapse code" : "Expand code"
+          }">
+            <ollama-icon name="${expanded ? "chevron-up" : "chevron-down"}" size="xs"></ollama-icon>
+            <ollama-tooltip>${expanded ? "Collapse" : "Expand"}</ollama-tooltip>
+          </ollama-button>
+          <ollama-button class="copy-button" variant="icon" aria-label="Copy code">
+            <ollama-icon name="copy" size="xs"></ollama-icon>
+            <ollama-tooltip>Copy</ollama-tooltip>
+          </ollama-button>
+        </div>
       </div>
       <pre class="code"><code></code></pre>
     `;
@@ -209,6 +252,17 @@ class OllamaCodeBlock extends BaseComponent {
       bash: "bash",
     };
     return mapping[normalized] || normalized;
+  }
+
+  formatBytes(bytes) {
+    if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
+    const units = ["B", "KB", "MB", "GB"];
+    const idx = Math.min(
+      Math.floor(Math.log(bytes) / Math.log(1024)),
+      units.length - 1,
+    );
+    const value = bytes / 1024 ** idx;
+    return `${value.toFixed(value >= 10 || idx === 0 ? 0 : 1)} ${units[idx]}`;
   }
 }
 

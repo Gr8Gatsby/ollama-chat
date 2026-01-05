@@ -16,10 +16,16 @@ import "./components/base/ollama-text.js";
 import "./components/base/ollama-toggle-switch.js";
 import { listModels, streamChat } from "./utils/ollama-client.js";
 import {
+  BACKEND_BASE,
   fetchConversations,
   createConversation,
   fetchMessages,
+  fetchConversationProject,
+  fetchProjectFiles,
+  fetchProjectFile,
   createMessage,
+  upsertProjectFile,
+  updateProject,
   deleteConversation,
   updateConversationTitle,
   logTokenUsage,
@@ -40,9 +46,13 @@ class OllamaFrontendApp extends HTMLElement {
     this.messagesByConversation = {};
     this.editingConversationId = "";
     this.renameDrafts = {};
-    this.projectExpanded =
-      '["my-project","my-project/src","my-project/styles"]';
-    this.projectSelected = "src/app.js";
+    this.projectByConversation = {};
+    this.projectFilesByProject = {};
+    this.projectManifestByProject = {};
+    this.projectTreeByProject = {};
+    this.projectStateByConversation = {};
+    this.projectFileContentByProject = {};
+    this.projectLintByProject = {};
     this.isStreaming = false;
     this.pendingDeleteConversation = null;
     this.renderQueued = false;
@@ -84,8 +94,23 @@ class OllamaFrontendApp extends HTMLElement {
     return this.messagesByConversation[this.activeConversationId] || [];
   }
 
+  getProjectState(conversationId) {
+    if (!this.projectStateByConversation[conversationId]) {
+      this.projectStateByConversation[conversationId] = {
+        selectedPath: "",
+        expanded: [],
+      };
+    }
+    return this.projectStateByConversation[conversationId];
+  }
+
   setMode(nextMode) {
     this.mode = nextMode;
+    if (nextMode === "project" && this.activeConversationId) {
+      this.loadProject(this.activeConversationId).then(() =>
+        this.scheduleRender(),
+      );
+    }
     this.render();
   }
 
@@ -106,6 +131,7 @@ class OllamaFrontendApp extends HTMLElement {
           this.activeConversationId = conversations[0].id;
         }
         await this.loadMessages(this.activeConversationId);
+        await this.loadProject(this.activeConversationId);
         this.scheduleRender();
         return;
       }
@@ -130,16 +156,21 @@ class OllamaFrontendApp extends HTMLElement {
       ];
       this.messagesByConversation[fallbackId] = [];
       this.activeConversationId = fallbackId;
+      await this.loadProject(fallbackId);
     }
     this.scheduleRender();
   }
 
   async createConversationRecord({ title } = {}) {
     try {
-      return await createConversation({
+      const id = await createConversation({
         title: title || "New chat",
         model: this.activeModel,
       });
+      if (id) {
+        await this.loadProject(id);
+      }
+      return id;
     } catch (error) {
       console.warn("[frontend] Failed to create conversation:", error);
       return null;
@@ -161,6 +192,394 @@ class OllamaFrontendApp extends HTMLElement {
     } catch (error) {
       console.warn("[frontend] Failed to load messages:", error);
     }
+  }
+
+  async loadProject(conversationId) {
+    if (!conversationId) return;
+    try {
+      const project = await fetchConversationProject(conversationId);
+      if (!project) return;
+      this.projectByConversation[conversationId] = project;
+      const files = await fetchProjectFiles(project.id);
+      this.projectFilesByProject[project.id] = files;
+      await this.ensureProjectManifest(project, files);
+      const refreshedFiles = this.projectFilesByProject[project.id] || files;
+      this.projectTreeByProject[project.id] = this.buildFileTree(
+        project.name,
+        refreshedFiles,
+      );
+      const state = this.getProjectState(conversationId);
+      if (!state.selectedPath && refreshedFiles.length) {
+        state.selectedPath = refreshedFiles[0].path;
+      }
+      if (!state.expanded.length && project.name) {
+        state.expanded = [project.name];
+      }
+      if (state.selectedPath) {
+        await this.ensureProjectFileContent(project.id, state.selectedPath);
+      }
+      await this.updateProjectLint(project.id);
+    } catch (error) {
+      console.warn("[frontend] Failed to load project:", error);
+    }
+  }
+
+  buildProjectManifest(project, files = []) {
+    const fileList = files
+      .map((file) => file.path)
+      .filter(
+        (path) =>
+          path &&
+          path !== "project.manifest.json" &&
+          path !== "project.guidance.md",
+      )
+      .filter((path, index, list) => list.indexOf(path) === index)
+      .sort();
+    const htmlFiles = fileList.filter((path) => path.endsWith(".html"));
+    const entry = fileList.includes("index.html")
+      ? "index.html"
+      : htmlFiles[0] || fileList[0] || "index.html";
+    return {
+      preview: {
+        entry,
+        mode: "static",
+        root: "/",
+        files: fileList,
+      },
+      project: {
+        id: project.id,
+        name: project.name,
+        description: project.description || "",
+      },
+    };
+  }
+
+  buildLlmGuidanceMarkdown(projectName) {
+    const name = projectName || "Project";
+    return `# ${name} LLM Guidance
+
+You are building a no-build web project that runs directly in an iframe.
+
+## Project structure (default)
+
+- \`index.html\` (entrypoint)
+- \`styles.css\` (global styles)
+- \`src/main.js\` (bootstrap; registers components)
+- \`src/components/*.js\` (one file per Web Component)
+
+## Rules
+
+- Always keep \`index.html\` as the entrypoint.
+- Every new file must be referenced from \`index.html\` (directly or via \`src/main.js\`).
+- Prefer ES modules and \`type="module"\` scripts.
+- One file per component; avoid multi-file component splits unless requested.
+- Return complete files (no TODOs or placeholders).
+- Prefer semantic HTML for layout (header, main, nav, section, footer).
+- Use CSS Grid and Flexbox for layout; avoid table-based layout.
+- Create reusable UI pieces as Web Components in \`src/components/\` and import them in \`src/main.js\`.
+`;
+  }
+
+  buildPreviewUrl(projectId) {
+    if (!projectId) return "";
+    return `${BACKEND_BASE}/api/projects/${projectId}/preview/?t=${Date.now()}`;
+  }
+
+  getProjectById(projectId) {
+    return Object.values(this.projectByConversation).find(
+      (project) => project.id === projectId,
+    );
+  }
+
+  getProjectEntryPath(projectId) {
+    const manifest = this.projectManifestByProject[projectId];
+    if (!manifest?.content) return "index.html";
+    try {
+      const parsed = JSON.parse(manifest.content);
+      return parsed?.preview?.entry || "index.html";
+    } catch (error) {
+      return "index.html";
+    }
+  }
+
+  collectEntryReferences(html) {
+    const references = new Set();
+    const attrPattern = /(src|href)=["']([^"']+)["']/gi;
+    let match = null;
+    while ((match = attrPattern.exec(html)) !== null) {
+      const raw = match[2].trim();
+      if (!raw) continue;
+      if (/^(https?:|data:|mailto:|tel:|#)/i.test(raw)) continue;
+      const normalized = raw.replace(/^\/+/, "");
+      references.add(normalized);
+    }
+    return Array.from(references);
+  }
+
+  async updateProjectLint(projectId) {
+    if (!projectId) return;
+    const entryPath = this.getProjectEntryPath(projectId);
+    await this.ensureProjectFileContent(projectId, entryPath);
+    const files = this.projectFilesByProject[projectId] || [];
+    const fileMap = new Set(files.map((file) => file.path));
+    const entryFile = this.projectFileContentByProject[projectId]?.[entryPath];
+    const lint = [];
+    if (!entryFile?.content) {
+      lint.push({
+        message: `Entry file '${entryPath}' is missing from the project files.`,
+      });
+    } else {
+      const refs = this.collectEntryReferences(entryFile.content);
+      refs.forEach((ref) => {
+        if (!fileMap.has(ref)) {
+          lint.push({
+            message: `Reference '${ref}' does not exist in the project files.`,
+          });
+        }
+      });
+    }
+    this.projectLintByProject[projectId] = lint;
+  }
+
+  buildMissingReferencesPrompt(entryPath, lintErrors) {
+    const missing = lintErrors
+      .map((item) => item.message)
+      .filter(Boolean)
+      .join("\n");
+    return `Fix missing project files referenced by ${entryPath}.
+
+Missing references:
+${missing || "No references found."}
+
+Instructions:
+- Create any missing files with complete, working content.
+- If a reference is wrong, update ${entryPath} to point at the correct existing file.
+- Ensure ${entryPath} links all needed CSS/JS files.
+- Keep the project manifest consistent with the file list.
+- Return complete files (no TODOs or placeholders).`;
+  }
+
+  async reconcileProjectManifest(projectId) {
+    if (!projectId) return [];
+    const project = this.getProjectById(projectId);
+    if (!project) return [];
+    const files = await fetchProjectFiles(projectId);
+    this.projectFilesByProject[projectId] = files;
+    const manifest = this.buildProjectManifest(project, files);
+    const file = await upsertProjectFile(projectId, {
+      path: "project.manifest.json",
+      content: JSON.stringify(manifest, null, 2),
+      language: "json",
+    });
+    this.projectManifestByProject[projectId] = file;
+    return files;
+  }
+
+  async ensureProjectManifest(project, files) {
+    const existing = files.find(
+      (file) => file.path === "project.manifest.json",
+    );
+    if (existing) {
+      this.projectManifestByProject[project.id] = existing;
+    }
+    const manifest = this.buildProjectManifest(project, files);
+    const file = await upsertProjectFile(project.id, {
+      path: "project.manifest.json",
+      content: JSON.stringify(manifest, null, 2),
+      language: "json",
+    });
+    this.projectManifestByProject[project.id] = file;
+    const guidance = files.find((item) => item.path === "project.guidance.md");
+    if (!guidance) {
+      await upsertProjectFile(project.id, {
+        path: "project.guidance.md",
+        content: this.buildLlmGuidanceMarkdown(project.name),
+        language: "markdown",
+      });
+    }
+    const refreshed = await fetchProjectFiles(project.id);
+    this.projectFilesByProject[project.id] = refreshed;
+    await this.ensureProjectFileContent(project.id, "project.guidance.md");
+  }
+
+  async ensureProjectFileContent(projectId, path) {
+    if (!projectId || !path) return;
+    if (!this.projectFileContentByProject[projectId]) {
+      this.projectFileContentByProject[projectId] = {};
+    }
+    if (this.projectFileContentByProject[projectId][path]) return;
+    try {
+      const file = await fetchProjectFile(projectId, path);
+      if (file) {
+        this.projectFileContentByProject[projectId][path] = file;
+      }
+    } catch (error) {
+      console.warn("[frontend] Failed to load project file:", error);
+    }
+  }
+
+  async ensureAllProjectFilesContent(projectId) {
+    const files = this.projectFilesByProject[projectId] || [];
+    await Promise.all(
+      files.map((file) => this.ensureProjectFileContent(projectId, file.path)),
+    );
+  }
+
+  buildFileTree(projectName, files = []) {
+    const root = {
+      name: projectName || "Project",
+      type: "directory",
+      children: [],
+    };
+    const lookup = new Map([["", root]]);
+    const manifest = files.find(
+      (file) => file.path === "project.manifest.json",
+    );
+    if (manifest) {
+      root.children.push({
+        name: "project.manifest.json",
+        type: "file",
+        path: "project.manifest.json",
+        language: manifest.language || "json",
+        size: manifest.size || 0,
+        pinned: true,
+      });
+    }
+    files.forEach((file) => {
+      if (file.path === "project.manifest.json") return;
+      const parts = file.path.split("/").filter(Boolean);
+      let currentPath = "";
+      let parent = root;
+      parts.forEach((part, index) => {
+        const isFile = index === parts.length - 1;
+        currentPath = currentPath ? `${currentPath}/${part}` : part;
+        if (isFile) {
+          parent.children.push({
+            name: part,
+            type: "file",
+            path: file.path,
+            language: file.language,
+            size: file.size,
+          });
+          return;
+        }
+        if (!lookup.has(currentPath)) {
+          const node = {
+            name: part,
+            type: "directory",
+            path: currentPath,
+            children: [],
+          };
+          parent.children.push(node);
+          lookup.set(currentPath, node);
+        }
+        parent = lookup.get(currentPath);
+      });
+    });
+    return root;
+  }
+
+  extractFilesFromContent(content) {
+    const lines = content.split("\n");
+    const files = [];
+    let pendingPath = "";
+    let inFence = false;
+    let fenceLang = "text";
+    let buffer = [];
+
+    const filePattern =
+      /^(?:\s*(?:File|Path)\s*[:\-]\s*|\/\/\s*File:\s*|\/\*\s*File:\s*|<!--\s*File:\s*)(.+?)(?:\s*-->|\s*\*\/)?$/i;
+
+    const flushFence = () => {
+      if (buffer.length) {
+        let resolvedPath = pendingPath;
+        if (!resolvedPath) {
+          if (fenceLang === "html") resolvedPath = "index.html";
+          if (fenceLang === "css") resolvedPath = "styles.css";
+          if (
+            fenceLang === "js" ||
+            fenceLang === "javascript" ||
+            fenceLang === "ts" ||
+            fenceLang === "typescript"
+          ) {
+            resolvedPath = "app.js";
+          }
+        }
+        if (resolvedPath) {
+          files.push({
+            path: resolvedPath,
+            content: buffer.join("\n").trimEnd(),
+            language: fenceLang,
+          });
+        }
+      }
+      pendingPath = "";
+      buffer = [];
+    };
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      const fileMatch = trimmed.match(filePattern);
+      if (fileMatch && !inFence) {
+        pendingPath = fileMatch[1].trim();
+        continue;
+      }
+
+      if (trimmed.startsWith("```")) {
+        if (!inFence) {
+          inFence = true;
+          const fenceInfo = trimmed.replace(/^```+/, "").trim();
+          if (fenceInfo) {
+            const parts = fenceInfo.split(/\s+/);
+            if (parts[0].includes(".") || parts[0].includes("/")) {
+              pendingPath = pendingPath || parts[0];
+              fenceLang = "text";
+            } else {
+              fenceLang = parts[0];
+              if (parts[1]) {
+                pendingPath = pendingPath || parts[1];
+              }
+            }
+          } else {
+            fenceLang = "text";
+          }
+          continue;
+        }
+        if (inFence) {
+          inFence = false;
+          flushFence();
+          continue;
+        }
+      }
+
+      if (inFence) {
+        buffer.push(line);
+      }
+    }
+
+    if (inFence) {
+      flushFence();
+    }
+
+    return files;
+  }
+
+  async persistFilesFromResponse(conversationId, content) {
+    if (!conversationId || !content) return;
+    const project = this.projectByConversation[conversationId];
+    if (!project) {
+      await this.loadProject(conversationId);
+    }
+    const projectId = this.projectByConversation[conversationId]?.id;
+    if (!projectId) return;
+    const files = this.extractFilesFromContent(content);
+    if (!files.length) return;
+    for (const file of files) {
+      await upsertProjectFile(projectId, file);
+    }
+    await this.reconcileProjectManifest(projectId);
+    this.projectFileContentByProject[projectId] = {};
+    await this.loadProject(conversationId);
   }
 
   updateConversationMetrics(conversationId, tokenDelta = 0) {
@@ -191,6 +610,42 @@ class OllamaFrontendApp extends HTMLElement {
       }
     }
     this.scheduleRender();
+  }
+
+  detectStreamingFile(messages) {
+    const assistant = messages
+      .filter((msg) => msg.role === "assistant")
+      .slice(-1)[0];
+    if (!assistant) return;
+    if (assistant.filePreview) return;
+    const content = assistant.content || "";
+    const htmlDetected =
+      content.includes("<!doctype html") ||
+      content.includes("<html") ||
+      content.includes("```html");
+    if (htmlDetected) {
+      assistant.filePreview = true;
+      assistant.fileLanguage = "html";
+      assistant.filePath = "index.html";
+    }
+  }
+
+  extractFilePreviewParts(content, fallbackLanguage = "html") {
+    const fenceRegex = /```(\w+)?[^\n]*\n([\s\S]*?)```/;
+    const match = content.match(fenceRegex);
+    if (!match) {
+      return {
+        before: "",
+        code: content,
+        after: "",
+        language: fallbackLanguage,
+      };
+    }
+    const language = match[1] || fallbackLanguage;
+    const code = match[2] || "";
+    const before = content.slice(0, match.index || 0).trim();
+    const after = content.slice((match.index || 0) + match[0].length).trim();
+    return { before, code, after, language };
   }
 
   async handleSend(message) {
@@ -245,12 +700,38 @@ class OllamaFrontendApp extends HTMLElement {
     }
     this.abortController = new AbortController();
 
+    const projectContext = conversationId
+      ? this.projectByConversation[conversationId]
+      : null;
+    const projectManifest = projectContext
+      ? this.buildProjectManifest(
+          projectContext,
+          this.projectFilesByProject[projectContext.id] || [],
+        )
+      : null;
+    const systemContext = projectManifest
+      ? `Project files (source of truth):\n${JSON.stringify(
+          projectManifest,
+          null,
+          2,
+        )}\n\nAll new files must be linked from the entry point. You may split HTML, CSS, and JS into separate files, but ensure index.html references them.`
+      : "";
     const payload = {
       model: this.activeModel,
-      messages: this.activeMessages.map((msg) => ({
-        role: msg.role === "assistant" ? "assistant" : "user",
-        content: msg.content,
-      })),
+      messages: [
+        ...(systemContext
+          ? [
+              {
+                role: "system",
+                content: systemContext,
+              },
+            ]
+          : []),
+        ...this.activeMessages.map((msg) => ({
+          role: msg.role === "assistant" ? "assistant" : "user",
+          content: msg.content,
+        })),
+      ],
     };
 
     try {
@@ -262,6 +743,7 @@ class OllamaFrontendApp extends HTMLElement {
           this.updateLastAssistantMessage(conversationId, (msg) => {
             msg.content += content;
           });
+          this.detectStreamingFile(this.messagesByConversation[conversationId]);
         }
         if (chunk?.done) {
           const totalTokens =
@@ -290,6 +772,10 @@ class OllamaFrontendApp extends HTMLElement {
                 totalTokens,
               });
               this.updateConversationMetrics(conversationId, totalTokens || 0);
+              await this.persistFilesFromResponse(
+                conversationId,
+                assistantContent,
+              );
             } catch (error) {
               console.warn(
                 "[frontend] Failed to persist assistant message:",
@@ -342,7 +828,9 @@ class OllamaFrontendApp extends HTMLElement {
         const id = event.detail?.id;
         if (!id) return;
         this.activeConversationId = id;
-        this.loadMessages(id).then(() => this.scheduleRender());
+        Promise.all([this.loadMessages(id), this.loadProject(id)]).then(() =>
+          this.scheduleRender(),
+        );
       });
       item.addEventListener("conversation-rename", async (event) => {
         const id = event.detail?.id;
@@ -373,6 +861,16 @@ class OllamaFrontendApp extends HTMLElement {
         this.scheduleRender();
         try {
           await updateConversationTitle(id, nextTitle);
+          const project = this.projectByConversation[id];
+          if (project?.id) {
+            await updateProject(project.id, { name: nextTitle });
+            project.name = nextTitle;
+            await this.ensureProjectManifest(
+              project,
+              this.projectFilesByProject[project.id] || [],
+            );
+            await this.loadProject(id);
+          }
         } catch (error) {
           console.warn("[frontend] Failed to rename conversation:", error);
           this.editingConversationId = id;
@@ -465,15 +963,89 @@ class OllamaFrontendApp extends HTMLElement {
     const projectView = this.querySelector("ollama-project-view");
     if (projectView) {
       projectView.addEventListener("file-selected", (event) => {
-        this.projectSelected = event.detail?.path || this.projectSelected;
-        this.scheduleRender();
+        const path = event.detail?.path;
+        if (!path || !this.activeConversationId) return;
+        const state = this.getProjectState(this.activeConversationId);
+        state.selectedPath = path;
+        const project = this.projectByConversation[this.activeConversationId];
+        if (project?.id) {
+          this.ensureProjectFileContent(project.id, path).then(() =>
+            this.scheduleRender(),
+          );
+        } else {
+          this.scheduleRender();
+        }
       });
       projectView.addEventListener("expanded-change", (event) => {
         const expanded = event.detail?.expanded || [];
-        this.projectExpanded = JSON.stringify(expanded);
+        if (!this.activeConversationId) return;
+        const state = this.getProjectState(this.activeConversationId);
+        state.expanded = expanded;
         this.scheduleRender();
       });
     }
+
+    const previewToggle = this.querySelector("[data-preview-open]");
+    previewToggle?.addEventListener("click", async () => {
+      const project = this.projectByConversation[this.activeConversationId];
+      if (!project?.id) return;
+      await this.ensureAllProjectFilesContent(project.id);
+      await this.updateProjectLint(project.id);
+      const lintErrors = this.projectLintByProject[project.id] || [];
+      if (lintErrors.length) {
+        this.previewOpen = true;
+        this.previewError =
+          "Preview blocked. Fix missing file references in index.html.";
+        this.previewUrl = "";
+        this.scheduleRender();
+        return;
+      }
+      this.previewOpen = true;
+      this.previewError = "";
+      this.previewUrl = this.buildPreviewUrl(project.id);
+      this.scheduleRender();
+    });
+
+    const previewClose = this.querySelector("[data-preview-close]");
+    previewClose?.addEventListener("click", () => {
+      this.previewOpen = false;
+      this.previewError = "";
+      this.previewUrl = "";
+      this.scheduleRender();
+    });
+
+    const previewReload = this.querySelector("[data-preview-reload]");
+    previewReload?.addEventListener("click", () => {
+      const project = this.projectByConversation[this.activeConversationId];
+      if (!project?.id) return;
+      this.previewError = "";
+      this.previewUrl = this.buildPreviewUrl(project.id);
+      this.scheduleRender();
+    });
+
+    const previewShot = this.querySelector("[data-preview-shot]");
+    previewShot?.addEventListener("click", async () => {
+      const preview = this.querySelector("ollama-live-preview");
+      if (!preview?.captureScreenshot) return;
+      const dataUrl = await preview.captureScreenshot();
+      if (!dataUrl) return;
+      const link = document.createElement("a");
+      link.href = dataUrl;
+      link.download = "preview.png";
+      link.click();
+    });
+
+    const fixMissingButton = this.querySelector("[data-fix-missing]");
+    fixMissingButton?.addEventListener("click", async () => {
+      const conversationId = this.activeConversationId;
+      const project = this.projectByConversation[conversationId];
+      if (!conversationId || !project?.id) return;
+      const entryPath = this.getProjectEntryPath(project.id);
+      const lintErrors = this.projectLintByProject[project.id] || [];
+      if (!lintErrors.length) return;
+      const prompt = this.buildMissingReferencesPrompt(entryPath, lintErrors);
+      await this.handleSend(prompt);
+    });
   }
 
   renderMessages(messages) {
@@ -490,6 +1062,39 @@ class OllamaFrontendApp extends HTMLElement {
               model="${msg.model || ""}"
               ${msg.tokens ? `tokens="${msg.tokens}"` : ""}
             ></ollama-user-message>
+          `;
+        }
+        if (msg.filePreview) {
+          const parts = this.extractFilePreviewParts(
+            msg.content,
+            msg.fileLanguage || "html",
+          );
+          return `
+            <ollama-ai-response
+              timestamp="${msg.timestamp || ""}"
+              model="${msg.model || ""}"
+              ${msg.tokens ? `tokens="${msg.tokens}"` : ""}
+              ${msg.streaming ? "streaming" : ""}
+            >
+              ${
+                parts.before
+                  ? `<ollama-markdown-renderer content="${this.escapeAttribute(
+                      parts.before,
+                    )}"></ollama-markdown-renderer>`
+                  : ""
+              }
+              <ollama-code-block
+                language="${this.escapeAttribute(parts.language)}"
+                code="${this.escapeAttribute(parts.code)}"
+              ></ollama-code-block>
+              ${
+                parts.after
+                  ? `<ollama-markdown-renderer content="${this.escapeAttribute(
+                      parts.after,
+                    )}"></ollama-markdown-renderer>`
+                  : ""
+              }
+            </ollama-ai-response>
           `;
         }
         return `
@@ -527,6 +1132,40 @@ class OllamaFrontendApp extends HTMLElement {
     const deleteMessage = pendingConversation
       ? `Deleting the conversation '${pendingConversation.title || "Untitled chat"}' cannot be undone.`
       : "";
+    const activeProject =
+      this.projectByConversation[this.activeConversationId] || null;
+    const projectFiles = activeProject
+      ? this.projectFilesByProject[activeProject.id] || []
+      : [];
+    const projectTree = activeProject
+      ? this.projectTreeByProject[activeProject.id] || {
+          name: activeProject.name || "Project",
+          type: "directory",
+          children: [],
+        }
+      : { name: "Project", type: "directory", children: [] };
+    const projectState = this.activeConversationId
+      ? this.getProjectState(this.activeConversationId)
+      : { selectedPath: "", expanded: [] };
+    const selectedPath = projectState.selectedPath || "";
+    const selectedFile = activeProject
+      ? this.projectFileContentByProject[activeProject.id]?.[selectedPath]
+      : null;
+    const selectedMeta = selectedPath
+      ? projectFiles.find((file) => file.path === selectedPath)
+      : null;
+    const entryPath = activeProject
+      ? this.getProjectEntryPath(activeProject.id)
+      : "";
+    const lintErrors =
+      activeProject && selectedPath === entryPath
+        ? this.projectLintByProject[activeProject.id] || []
+        : [];
+    const hasLintErrors = Boolean(
+      activeProject &&
+      (this.projectLintByProject[activeProject.id] || []).length,
+    );
+    const previewUrl = this.previewUrl || "";
 
     this.innerHTML = `
       <ollama-chat-container ${
@@ -580,7 +1219,70 @@ class OllamaFrontendApp extends HTMLElement {
         </header>
         ${
           showProject
-            ? ""
+            ? `
+              <div slot="header-actions" aria-label="Project actions">
+                <ollama-action-bar>
+                  ${
+                    this.previewOpen
+                      ? `
+                        <ollama-button
+                          variant="icon"
+                          aria-label="Close preview"
+                          data-preview-close
+                        >
+                          <ollama-icon name="x"></ollama-icon>
+                          <ollama-tooltip>Close preview</ollama-tooltip>
+                        </ollama-button>
+                        <ollama-button
+                          variant="icon"
+                          aria-label="Refresh preview"
+                          data-preview-reload
+                        >
+                          <ollama-icon name="refresh-cw"></ollama-icon>
+                          <ollama-tooltip>Refresh preview</ollama-tooltip>
+                        </ollama-button>
+                        <ollama-button
+                          variant="icon"
+                          aria-label="Screenshot preview"
+                          data-preview-shot
+                        >
+                          <ollama-icon name="camera"></ollama-icon>
+                          <ollama-tooltip>Screenshot</ollama-tooltip>
+                        </ollama-button>
+                      `
+                      : `
+                        <ollama-button
+                          variant="icon"
+                          aria-label="Open preview"
+                          data-preview-open
+                          ${hasLintErrors ? "disabled" : ""}
+                        >
+                          <ollama-icon name="play"></ollama-icon>
+                          <ollama-tooltip>${
+                            hasLintErrors
+                              ? "Fix missing files before preview"
+                              : "Preview"
+                          }</ollama-tooltip>
+                        </ollama-button>
+                        ${
+                          hasLintErrors
+                            ? `
+                              <ollama-button
+                                variant="icon"
+                                aria-label="Fix missing files"
+                                data-fix-missing
+                              >
+                                <ollama-icon name="wand-2"></ollama-icon>
+                                <ollama-tooltip>Fix missing files</ollama-tooltip>
+                              </ollama-button>
+                            `
+                            : ""
+                        }
+                      `
+                  }
+                </ollama-action-bar>
+              </div>
+            `
             : `
               <div slot="header-actions" aria-label="Chat actions">
                 <ollama-action-bar>
@@ -620,24 +1322,47 @@ class OllamaFrontendApp extends HTMLElement {
             showProject
               ? `
                 <div style="position: relative; height: 100%;">
-                  <ollama-project-view
-                    project-name="Demo Project"
-                    description="Generated by Ollama Chat"
-                    file-count="4"
-                    selected-path="${this.projectSelected}"
-                    file-language="js"
-                    file-size="1.2 KB"
-                    file-lines="24"
-                    file-content="const greeting = 'Hello';\nconsole.log(greeting);\n"
-                    expanded='${this.projectExpanded}'
-                    tree='{"name":"my-project","type":"directory","children":[{"name":"index.html","type":"file","path":"index.html"},{"name":"styles","type":"directory","children":[{"name":"main.css","type":"file","path":"styles/main.css"}]},{"name":"src","type":"directory","children":[{"name":"app.js","type":"file","path":"src/app.js"},{"name":"data.json","type":"file","path":"src/data.json"}]}]}'
-                  ></ollama-project-view>
-                  <div style="margin-top: 12px; height: 240px;">
-                    <ollama-live-preview
-                      title="Preview"
-                      srcdoc='${DEFAULT_PREVIEW}'
-                    ></ollama-live-preview>
-                  </div>
+                  ${
+                    this.previewOpen
+                      ? `<ollama-live-preview
+                           title="Preview"
+                           chromeless
+                           error="${this.escapeAttribute(this.previewError || "")}"
+                           src="${this.escapeAttribute(previewUrl)}"
+                         ></ollama-live-preview>`
+                      : `<ollama-project-view
+                           project-name="${this.escapeAttribute(activeProject?.name || "Project")}"
+                           description="${this.escapeAttribute(
+                             activeProject?.description ||
+                               "Generated by Ollama Chat",
+                           )}"
+                           file-count="${projectFiles.length || 0}"
+                           selected-path="${this.escapeAttribute(selectedPath)}"
+                           file-language="${this.escapeAttribute(
+                             selectedFile?.language ||
+                               selectedMeta?.language ||
+                               "",
+                           )}"
+                           file-size="${this.escapeAttribute(
+                             selectedFile?.size || selectedMeta?.size || "",
+                           )}"
+                           file-lines="${this.escapeAttribute(
+                             selectedFile?.content
+                               ? selectedFile.content.split("\\n").length
+                               : "",
+                           )}"
+                           file-content="${this.escapeAttribute(
+                             selectedFile?.content || "",
+                           )}"
+                           lint-errors='${this.escapeAttribute(
+                             JSON.stringify(lintErrors),
+                           )}'
+                           expanded='${this.escapeAttribute(
+                             JSON.stringify(projectState.expanded || []),
+                           )}'
+                           tree='${this.escapeAttribute(JSON.stringify(projectTree))}'
+                         ></ollama-project-view>`
+                  }
                 </div>
               `
               : `
