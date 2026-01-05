@@ -599,13 +599,22 @@ None yet - project just created
     const isNewProject = existingFiles.length === 0;
     const hasExistingFiles = existingFiles.length > 0;
 
-    // Get specification content if it exists
-    const specFile = files.find((f) => f.path === "project.spec.md");
+    // Get guidance and specification content if they exist
+    const guidanceContent =
+      this.projectFileContentByProject[project.id]?.["project.guidance.md"]
+        ?.content;
     const specContent =
       this.projectFileContentByProject[project.id]?.["project.spec.md"]
         ?.content;
 
-    let context = `## Project Architecture\n\nComponent-first web application with separation of concerns.\n\n`;
+    let context = "";
+
+    // Include guidance at the top (most important)
+    if (guidanceContent) {
+      context += `${guidanceContent}\n\n---\n\n`;
+    }
+
+    context += `## Project Architecture\n\nComponent-first web application with separation of concerns.\n\n`;
 
     // Include specification if available
     if (specContent) {
@@ -1283,8 +1292,12 @@ Instructions:
       ? this.buildProjectManifest(projectContext, projectFiles)
       : null;
 
-    // Ensure spec file is loaded before building context
+    // Ensure guidance and spec files are loaded before building context
     if (projectContext && projectContext.id) {
+      await this.ensureProjectFileContent(
+        projectContext.id,
+        "project.guidance.md",
+      );
       await this.ensureProjectFileContent(projectContext.id, "project.spec.md");
     }
 
