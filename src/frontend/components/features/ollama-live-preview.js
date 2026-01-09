@@ -53,8 +53,139 @@ class OllamaLivePreview extends BaseComponent {
   }
 
   captureScreenshot() {
-    // TODO: Implement screenshot functionality
-    return Promise.resolve(null);
+    const iframe = this.shadowRoot?.querySelector("iframe");
+    if (!iframe)
+      return Promise.resolve({
+        dataUrl: null,
+        error: "Preview iframe not found.",
+      });
+    const doc = iframe.contentDocument;
+    if (!doc || !doc.body) {
+      return this.captureViaSrcdoc(iframe);
+    }
+
+    return this.loadHtml2Canvas().then((html2canvas) => {
+      if (!html2canvas) {
+        return {
+          dataUrl: null,
+          error: "html2canvas failed to load.",
+        };
+      }
+      return html2canvas(doc.body, {
+        backgroundColor: "#ffffff",
+        useCORS: true,
+        logging: false,
+        windowWidth: doc.documentElement?.scrollWidth || iframe.clientWidth,
+        windowHeight: doc.documentElement?.scrollHeight || iframe.clientHeight,
+      })
+        .then((canvas) => ({
+          dataUrl: canvas.toDataURL("image/png"),
+          error: "",
+        }))
+        .catch((error) => ({
+          dataUrl: null,
+          error: error?.message || "html2canvas failed to render.",
+        }));
+    });
+  }
+
+  loadHtml2Canvas() {
+    if (window.html2canvas) {
+      return Promise.resolve(window.html2canvas);
+    }
+    if (this._html2canvasPromise) {
+      return this._html2canvasPromise;
+    }
+    this._html2canvasPromise = new Promise((resolve) => {
+      const script = document.createElement("script");
+      script.src =
+        "https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js";
+      script.async = true;
+      script.onload = () => resolve(window.html2canvas || null);
+      script.onerror = () => resolve(null);
+      document.head.appendChild(script);
+    });
+    return this._html2canvasPromise;
+  }
+
+  async captureViaSrcdoc(iframe) {
+    const src = iframe.getAttribute("src");
+    if (!src) {
+      return { dataUrl: null, error: "Preview document not accessible." };
+    }
+    try {
+      const response = await fetch(src);
+      if (!response.ok) {
+        return {
+          dataUrl: null,
+          error: `Failed to load preview HTML (${response.status}).`,
+        };
+      }
+      const html = await response.text();
+      const originalSrc = src;
+      iframe.removeAttribute("src");
+      iframe.setAttribute("srcdoc", html);
+      await new Promise((resolve) => {
+        const timeout = setTimeout(resolve, 1500);
+        iframe.onload = () => {
+          clearTimeout(timeout);
+          resolve();
+        };
+      });
+      const doc = iframe.contentDocument;
+      if (!doc || !doc.body) {
+        iframe.setAttribute("src", originalSrc);
+        iframe.removeAttribute("srcdoc");
+        return { dataUrl: null, error: "Preview document not accessible." };
+      }
+      await this.waitForPreviewReady(doc);
+      const html2canvas = await this.loadHtml2Canvas();
+      if (!html2canvas) {
+        iframe.setAttribute("src", originalSrc);
+        iframe.removeAttribute("srcdoc");
+        return { dataUrl: null, error: "html2canvas failed to load." };
+      }
+      const canvas = await html2canvas(doc.body, {
+        backgroundColor: "#ffffff",
+        useCORS: true,
+        logging: false,
+        windowWidth: doc.documentElement?.scrollWidth || iframe.clientWidth,
+        windowHeight: doc.documentElement?.scrollHeight || iframe.clientHeight,
+      });
+      const dataUrl = canvas.toDataURL("image/png");
+      iframe.setAttribute("src", originalSrc);
+      iframe.removeAttribute("srcdoc");
+      return { dataUrl, error: "" };
+    } catch (error) {
+      return {
+        dataUrl: null,
+        error: error?.message || "Preview document not accessible.",
+      };
+    }
+  }
+
+  async waitForPreviewReady(doc) {
+    try {
+      if (doc.fonts?.ready) {
+        await doc.fonts.ready;
+      }
+    } catch {}
+
+    const images = Array.from(doc.images || []);
+    if (images.length) {
+      await Promise.all(
+        images.map(
+          (img) =>
+            new Promise((resolve) => {
+              if (img.complete) return resolve();
+              img.onload = () => resolve();
+              img.onerror = () => resolve();
+            }),
+        ),
+      );
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 300));
   }
 
   render() {

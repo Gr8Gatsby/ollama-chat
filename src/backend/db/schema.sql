@@ -50,6 +50,7 @@ CREATE TABLE IF NOT EXISTS messages (
   content TEXT NOT NULL,
   model TEXT,
   images TEXT,
+  metadata TEXT,
   project_id TEXT,
   created_at INTEGER NOT NULL,
   FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE,

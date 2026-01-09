@@ -8,6 +8,31 @@ import "../base/ollama-spinner.js";
 import "./ollama-markdown-renderer.js";
 const PRISM_BASE_URL = "https://cdn.jsdelivr.net/npm/prismjs@1.29.0";
 let prismLoadPromise = null;
+const HIGHLIGHT_CACHE_LIMIT = 20;
+const highlightCache = new Map();
+
+function hashContent(value) {
+  let hash = 5381;
+  for (let i = 0; i < value.length; i += 1) {
+    hash = (hash * 33) ^ value.charCodeAt(i);
+  }
+  return hash >>> 0;
+}
+
+function getHighlightCacheKey(language, content) {
+  return `${language}:${content.length}:${hashContent(content)}`;
+}
+
+function cacheHighlight(key, html) {
+  if (
+    !highlightCache.has(key) &&
+    highlightCache.size >= HIGHLIGHT_CACHE_LIMIT
+  ) {
+    const oldestKey = highlightCache.keys().next().value;
+    highlightCache.delete(oldestKey);
+  }
+  highlightCache.set(key, html);
+}
 
 async function ensurePrismLoaded() {
   if (typeof window === "undefined") return null;
@@ -45,6 +70,7 @@ class OllamaFileDisplay extends BaseComponent {
   constructor() {
     super();
     this.copySuccess = false;
+    this._highlightToken = 0;
     this.render();
   }
 
@@ -152,17 +178,39 @@ class OllamaFileDisplay extends BaseComponent {
     try {
       const Prism = await ensurePrismLoaded();
       if (Prism && Prism.languages?.[language]) {
-        codeNode.innerHTML = Prism.highlight(
+        const html = Prism.highlight(
           content,
           Prism.languages[language],
           language,
         );
-        return;
+        codeNode.innerHTML = html;
+        return html;
       }
     } catch (error) {
       console.warn("[ollama-file-display] Prism failed to load", error);
     }
     codeNode.textContent = content;
+    return "";
+  }
+
+  scheduleHighlight(language, content, cacheKey) {
+    const token = ++this._highlightToken;
+    const run = async () => {
+      if (token !== this._highlightToken) return;
+      const html = await this.applyHighlight(language, content);
+      if (cacheKey && html) {
+        cacheHighlight(cacheKey, html);
+      }
+    };
+
+    if (typeof window !== "undefined" && "requestIdleCallback" in window) {
+      window.requestIdleCallback(() => {
+        run();
+      });
+      return;
+    }
+
+    setTimeout(run, 0);
   }
 
   render() {
@@ -346,13 +394,7 @@ class OllamaFileDisplay extends BaseComponent {
         </div>
       </div>
       <div class="body">
-        ${
-          language === "markdown"
-            ? `<div class="markdown-content">
-                 <ollama-markdown-renderer content="${this.escapeAttribute(content)}"></ollama-markdown-renderer>
-               </div>`
-            : `<pre class="content"><code></code></pre>`
-        }
+        <pre class="content"><code></code></pre>
         ${
           loading
             ? `<div class="loading">
@@ -365,8 +407,20 @@ class OllamaFileDisplay extends BaseComponent {
       </div>
     `;
 
-    if (language !== "markdown") {
-      this.applyHighlight(language, content);
+    const codeNode = this.shadowRoot?.querySelector("code");
+    if (codeNode) {
+      if (language === "markdown") {
+        codeNode.textContent = content;
+      } else {
+        const cacheKey = getHighlightCacheKey(language, content);
+        const cached = highlightCache.get(cacheKey);
+        if (cached) {
+          codeNode.innerHTML = cached;
+        } else {
+          codeNode.textContent = content;
+          this.scheduleHighlight(language, content, cacheKey);
+        }
+      }
     }
     this.attachEventListeners();
   }

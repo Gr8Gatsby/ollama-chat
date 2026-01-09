@@ -6,6 +6,31 @@ import "./ollama-text.js";
 import "./ollama-tooltip.js";
 const PRISM_BASE_URL = "https://cdn.jsdelivr.net/npm/prismjs@1.29.0";
 let prismLoadPromise = null;
+const HIGHLIGHT_CACHE_LIMIT = 30;
+const highlightCache = new Map();
+
+function hashContent(value) {
+  let hash = 5381;
+  for (let i = 0; i < value.length; i += 1) {
+    hash = (hash * 33) ^ value.charCodeAt(i);
+  }
+  return hash >>> 0;
+}
+
+function getHighlightCacheKey(language, content) {
+  return `${language}:${content.length}:${hashContent(content)}`;
+}
+
+function cacheHighlight(key, html) {
+  if (
+    !highlightCache.has(key) &&
+    highlightCache.size >= HIGHLIGHT_CACHE_LIMIT
+  ) {
+    const oldestKey = highlightCache.keys().next().value;
+    highlightCache.delete(oldestKey);
+  }
+  highlightCache.set(key, html);
+}
 
 async function ensurePrismLoaded() {
   if (typeof window === "undefined") return null;
@@ -112,18 +137,38 @@ class OllamaCodeBlock extends BaseComponent {
     try {
       const Prism = await ensurePrismLoaded();
       if (Prism && Prism.languages?.[languageKey]) {
-        codeNode.innerHTML = Prism.highlight(
+        const html = Prism.highlight(
           code,
           Prism.languages[languageKey],
           languageKey,
         );
-        return;
+        codeNode.innerHTML = html;
+        return html;
       }
     } catch (error) {
       console.warn("[ollama-code-block] Prism failed to load", error);
     }
 
     codeNode.textContent = code;
+    return "";
+  }
+
+  scheduleHighlight(languageKey, code, cacheKey) {
+    const token = (this._highlightToken = (this._highlightToken || 0) + 1);
+    const run = async () => {
+      if (token !== this._highlightToken) return;
+      const html = await this.applyHighlight(languageKey, code);
+      if (cacheKey && html) {
+        cacheHighlight(cacheKey, html);
+      }
+    };
+
+    if (typeof window !== "undefined" && "requestIdleCallback" in window) {
+      window.requestIdleCallback(run);
+      return;
+    }
+
+    setTimeout(run, 0);
   }
 
   render() {
@@ -133,6 +178,7 @@ class OllamaCodeBlock extends BaseComponent {
     const expanded = this.hasAttribute("expanded");
     const derivedLines = code ? code.split("\n").length : 0;
     const derivedSize = this.formatBytes(new TextEncoder().encode(code).length);
+    const cacheKey = getHighlightCacheKey(languageKey, code);
 
     this.shadowRoot.innerHTML = `
       <style>
@@ -260,10 +306,19 @@ class OllamaCodeBlock extends BaseComponent {
           </ollama-button>
         </div>
       </div>
-      <pre class="code"><code></code></pre>
+      <pre class="code" ${expanded ? "" : 'style="display: none;"'}><code></code></pre>
     `;
 
-    this.applyHighlight(languageKey, code);
+    const codeNode = this.shadowRoot?.querySelector("code");
+    if (codeNode) {
+      const cached = highlightCache.get(cacheKey);
+      if (cached) {
+        codeNode.innerHTML = cached;
+      } else {
+        codeNode.textContent = code;
+        this.scheduleHighlight(languageKey, code, cacheKey);
+      }
+    }
     this.attachEventListeners();
   }
 

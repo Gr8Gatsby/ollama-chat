@@ -2,6 +2,29 @@ import { BaseComponent } from "../base/base-component.js";
 import "../base/ollama-text.js";
 import "../base/ollama-code-block.js";
 
+const MARKDOWN_CACHE_LIMIT = 20;
+const markdownCache = new Map();
+
+function hashContent(value) {
+  let hash = 5381;
+  for (let i = 0; i < value.length; i += 1) {
+    hash = (hash * 33) ^ value.charCodeAt(i);
+  }
+  return hash >>> 0;
+}
+
+function getMarkdownCacheKey(content) {
+  return `${content.length}:${hashContent(content)}`;
+}
+
+function cacheMarkdown(key, html) {
+  if (!markdownCache.has(key) && markdownCache.size >= MARKDOWN_CACHE_LIMIT) {
+    const oldestKey = markdownCache.keys().next().value;
+    markdownCache.delete(oldestKey);
+  }
+  markdownCache.set(key, html);
+}
+
 class OllamaMarkdownRenderer extends BaseComponent {
   static get observedAttributes() {
     return ["content"];
@@ -9,6 +32,7 @@ class OllamaMarkdownRenderer extends BaseComponent {
 
   constructor() {
     super();
+    this._renderToken = 0;
     this.render();
   }
 
@@ -225,7 +249,28 @@ class OllamaMarkdownRenderer extends BaseComponent {
     return String(value).replace(/"/g, "&quot;");
   }
 
+  scheduleRender(content) {
+    const token = ++this._renderToken;
+    const run = () => {
+      if (token !== this._renderToken) return;
+      const root = this.shadowRoot?.querySelector(".content");
+      if (!root) return;
+      const html = this.renderBlocks(content);
+      root.innerHTML = html;
+      root.removeAttribute("data-raw");
+      cacheMarkdown(getMarkdownCacheKey(content), html);
+    };
+
+    if (typeof window !== "undefined" && "requestIdleCallback" in window) {
+      window.requestIdleCallback(run);
+      return;
+    }
+
+    setTimeout(run, 0);
+  }
+
   render() {
+    const content = this.content;
     this.shadowRoot.innerHTML = `
       <style>
         ${this.getResetStyles()}
@@ -314,11 +359,26 @@ class OllamaMarkdownRenderer extends BaseComponent {
           color: var(--color-text-primary);
           font-weight: 600;
         }
+
+        .content[data-raw="true"] {
+          white-space: pre-wrap;
+        }
       </style>
-      <div class="content">
-        ${this.renderBlocks(this.content)}
-      </div>
+      <div class="content" data-raw="true"></div>
     `;
+
+    const root = this.shadowRoot?.querySelector(".content");
+    if (root) {
+      const cacheKey = getMarkdownCacheKey(content);
+      const cached = markdownCache.get(cacheKey);
+      if (cached) {
+        root.innerHTML = cached;
+        root.removeAttribute("data-raw");
+      } else {
+        root.textContent = content;
+        this.scheduleRender(content);
+      }
+    }
   }
 }
 

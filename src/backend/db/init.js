@@ -35,7 +35,16 @@ export function initDatabase(dbPath) {
     throw err;
   }
 
+  ensureColumn(db, "messages", "metadata", "TEXT");
+
   return db;
+}
+
+function ensureColumn(db, table, column, definition) {
+  const columns = db.prepare(`PRAGMA table_info(${table})`).all();
+  const hasColumn = columns.some((entry) => entry.name === column);
+  if (hasColumn) return;
+  db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
 }
 
 /**

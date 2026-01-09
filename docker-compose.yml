@@ -30,12 +30,10 @@ services:
       - ./data:/data
     environment:
       NODE_ENV: production
-      OLLAMA_HOST: http://ollama:11434
+      OLLAMA_HOST: http://host.docker.internal:11434
       DB_PATH: /data/ollama-chat.db
     networks:
       - ollama-chat-network
-    depends_on:
-      - ollama
     restart: unless-stopped
     deploy:
       resources:
@@ -43,21 +41,8 @@ services:
           memory: 512M
           cpus: "0.5"
 
-  ollama:
-    image: ollama/ollama:latest
-    container_name: ollama-chat-ollama
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama-models:/root/.ollama
-    networks:
-      - ollama-chat-network
-    restart: unless-stopped
-
 networks:
   ollama-chat-network:
     driver: bridge
 
-volumes:
-  ollama-models:
-    driver: local
+volumes: {}

@@ -86,6 +86,16 @@ export async function createMessage(conversationId, message) {
   return data.id;
 }
 
+export async function updateMessage(conversationId, messageId, payload) {
+  await requestJson(
+    `/api/conversations/${conversationId}/messages/${messageId}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    },
+  );
+}
+
 export async function updateConversationTitle(conversationId, title) {
   await requestJson(`/api/conversations/${conversationId}`, {
     method: "PATCH",
@@ -104,4 +114,68 @@ export async function logTokenUsage(payload) {
     method: "POST",
     body: JSON.stringify(payload),
   });
+}
+
+async function* readNdjsonStream(response) {
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() || "";
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      yield JSON.parse(trimmed);
+    }
+  }
+
+  const remaining = buffer.trim();
+  if (remaining) {
+    yield JSON.parse(remaining);
+  }
+}
+
+export async function* streamConversationChat(
+  conversationId,
+  { model, messages },
+  { signal } = {},
+) {
+  const response = await fetch(
+    `${BACKEND_BASE}/api/conversations/${conversationId}/stream`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model, messages }),
+      signal,
+    },
+  );
+
+  if (!response.ok || !response.body) {
+    let detail = "";
+    try {
+      const data = await response.json();
+      if (data?.error) {
+        detail = ` - ${data.error}`;
+      }
+    } catch (error) {
+      // Ignore JSON parsing errors for non-JSON responses.
+    }
+    throw new Error(`Conversation stream failed: ${response.status}${detail}`);
+  }
+
+  yield* readNdjsonStream(response);
+}
+
+export async function fetchModels() {
+  const response = await fetch(`${BACKEND_BASE}/api/models`);
+  if (!response.ok) {
+    throw new Error(`Failed to load models: ${response.status}`);
+  }
+  const data = await response.json();
+  return Array.isArray(data.models) ? data.models : [];
 }
