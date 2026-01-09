@@ -28,10 +28,7 @@ class OllamaMessageActions extends BaseComponent {
   get actions() {
     const raw = this.getAttribute("actions");
     if (!raw) {
-      return [
-        { id: "copy", icon: "copy", label: "Copy" },
-        { id: "regenerate", icon: "refresh-cw", label: "Regenerate" },
-      ];
+      return [{ id: "copy", icon: "copy", label: "Copy" }];
     }
     try {
       const parsed = JSON.parse(raw);

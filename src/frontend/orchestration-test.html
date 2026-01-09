@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Orchestration Test - Debug View</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      margin-bottom: 20px;
+      color: #333;
+    }
+
+    .test-area {
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+
+    textarea {
+      width: 100%;
+      min-height: 100px;
+      padding: 12px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-family: inherit;
+      font-size: 14px;
+      margin-bottom: 12px;
+    }
+
+    .button-group {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+
+    button {
+      padding: 10px 20px;
+      background: #007bff;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+
+    button:hover {
+      background: #0056b3;
+    }
+
+    button:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+
+    button.stop {
+      background: #dc3545;
+    }
+
+    button.stop:hover {
+      background: #c82333;
+    }
+
+    button.clear {
+      background: #6c757d;
+    }
+
+    button.clear:hover {
+      background: #545b62;
+    }
+
+    .panels {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+
+    .panel {
+      background: white;
+      border-radius: 8px;
+      padding: 20px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+
+    .panel h2 {
+      font-size: 16px;
+      margin-bottom: 12px;
+      color: #333;
+      border-bottom: 2px solid #007bff;
+      padding-bottom: 8px;
+    }
+
+    .log-area {
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
+      max-height: 500px;
+      overflow-y: auto;
+      background: #1e1e1e;
+      color: #d4d4d4;
+      padding: 12px;
+      border-radius: 4px;
+    }
+
+    .log-entry {
+      margin-bottom: 8px;
+      padding: 4px;
+      border-left: 3px solid transparent;
+    }
+
+    .log-entry.info {
+      border-left-color: #007bff;
+    }
+
+    .log-entry.success {
+      border-left-color: #28a745;
+      color: #98fb98;
+    }
+
+    .log-entry.error {
+      border-left-color: #dc3545;
+      color: #ff6b6b;
+    }
+
+    .log-entry.warning {
+      border-left-color: #ffc107;
+      color: #ffd700;
+    }
+
+    .timestamp {
+      color: #888;
+      font-size: 10px;
+    }
+
+    .status-bar {
+      background: #333;
+      color: white;
+      padding: 12px;
+      border-radius: 4px;
+      margin-bottom: 12px;
+      font-family: monospace;
+      font-size: 14px;
+    }
+
+    .status-bar .phase {
+      color: #4CAF50;
+      font-weight: bold;
+    }
+
+    .status-bar .elapsed {
+      color: #2196F3;
+    }
+
+    .chunk-display {
+      background: #f8f9fa;
+      padding: 12px;
+      border-radius: 4px;
+      border: 1px solid #dee2e6;
+      max-height: 300px;
+      overflow-y: auto;
+      font-family: monospace;
+      font-size: 12px;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+    }
+
+    .files-list {
+      list-style: none;
+    }
+
+    .files-list li {
+      padding: 8px;
+      margin-bottom: 4px;
+      background: #f8f9fa;
+      border-radius: 4px;
+      border-left: 3px solid #28a745;
+    }
+
+    .files-list li.rejected {
+      border-left-color: #dc3545;
+      background: #fff5f5;
+    }
+
+    .metric {
+      display: inline-block;
+      margin-right: 20px;
+    }
+
+    .metric-label {
+      color: #888;
+      font-size: 12px;
+    }
+
+    .metric-value {
+      font-weight: bold;
+      font-size: 18px;
+      color: #333;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🔬 Orchestration Test & Debug View</h1>
+
+    <div class="test-area">
+      <h2>Test Input</h2>
+      <textarea id="testPrompt" placeholder="Enter your test prompt...">Make me an elegant "Hello world!" it needs to minimalistic but also elegant and fancy. I'd like a very gradual change of color, very slow and hardly noticeable.</textarea>
+
+      <div class="button-group">
+        <button id="startBtn">▶️ Start Test</button>
+        <button id="stopBtn" class="stop" disabled>⏹️ Stop</button>
+        <button id="clearBtn" class="clear">🗑️ Clear Logs</button>
+      </div>
+
+      <div class="status-bar">
+        <span class="metric">
+          <span class="metric-label">Phase:</span>
+          <span class="metric-value phase" id="currentPhase">idle</span>
+        </span>
+        <span class="metric">
+          <span class="metric-label">Elapsed:</span>
+          <span class="metric-value elapsed" id="elapsed">0s</span>
+        </span>
+        <span class="metric">
+          <span class="metric-label">Chunks:</span>
+          <span class="metric-value" id="chunkCount">0</span>
+        </span>
+        <span class="metric">
+          <span class="metric-label">Bytes:</span>
+          <span class="metric-value" id="byteCount">0</span>
+        </span>
+      </div>
+    </div>
+
+    <div class="panels">
+      <div class="panel">
+        <h2>📋 Event Log</h2>
+        <div class="log-area" id="eventLog"></div>
+      </div>
+
+      <div class="panel">
+        <h2>📦 Orchestration Chunks</h2>
+        <div class="log-area" id="orchestrationLog"></div>
+      </div>
+
+      <div class="panel">
+        <h2>💬 LLM Response Content</h2>
+        <div class="chunk-display" id="contentDisplay"></div>
+      </div>
+
+      <div class="panel">
+        <h2>📁 Files Detected</h2>
+        <ul class="files-list" id="filesList"></ul>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    const API_BASE = window.BACKEND_API_BASE || 'http://localhost:8082';
+
+    let conversationId = null;
+    let abortController = null;
+    let chunkCount = 0;
+    let byteCount = 0;
+    let contentBuffer = '';
+
+    const elements = {
+      testPrompt: document.getElementById('testPrompt'),
+      startBtn: document.getElementById('startBtn'),
+      stopBtn: document.getElementById('stopBtn'),
+      clearBtn: document.getElementById('clearBtn'),
+      eventLog: document.getElementById('eventLog'),
+      orchestrationLog: document.getElementById('orchestrationLog'),
+      contentDisplay: document.getElementById('contentDisplay'),
+      filesList: document.getElementById('filesList'),
+      currentPhase: document.getElementById('currentPhase'),
+      elapsed: document.getElementById('elapsed'),
+      chunkCountEl: document.getElementById('chunkCount'),
+      byteCountEl: document.getElementById('byteCount'),
+    };
+
+    function log(message, type = 'info') {
+      const entry = document.createElement('div');
+      entry.className = `log-entry ${type}`;
+      const timestamp = new Date().toLocaleTimeString();
+      entry.innerHTML = `<span class="timestamp">[${timestamp}]</span> ${message}`;
+      elements.eventLog.appendChild(entry);
+      elements.eventLog.scrollTop = elements.eventLog.scrollHeight;
+    }
+
+    function logOrchestration(data) {
+      const entry = document.createElement('div');
+      entry.className = 'log-entry info';
+      const timestamp = new Date().toLocaleTimeString();
+      entry.innerHTML = `<span class="timestamp">[${timestamp}]</span> ${JSON.stringify(data, null, 2)}`;
+      elements.orchestrationLog.appendChild(entry);
+      elements.orchestrationLog.scrollTop = elements.orchestrationLog.scrollHeight;
+    }
+
+    function updateStatus(phase, elapsed) {
+      elements.currentPhase.textContent = phase || 'idle';
+      elements.elapsed.textContent = `${elapsed || 0}s`;
+    }
+
+    function updateMetrics() {
+      elements.chunkCountEl.textContent = chunkCount;
+      elements.byteCountEl.textContent = byteCount.toLocaleString();
+    }
+
+    async function createTestConversation() {
+      try {
+        log('Creating test conversation...', 'info');
+        const response = await fetch(`${API_BASE}/api/conversations`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: 'Orchestration Test',
+            model: 'deepseek-r1:8b'
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        const data = await response.json();
+        conversationId = data.id;
+        log(`✅ Conversation created: ${conversationId}`, 'success');
+        return conversationId;
+      } catch (error) {
+        log(`❌ Failed to create conversation: ${error.message}`, 'error');
+        throw error;
+      }
+    }
+
+    async function startOrchestration() {
+      const prompt = elements.testPrompt.value.trim();
+      if (!prompt) {
+        log('❌ Please enter a test prompt', 'error');
+        return;
+      }
+
+      try {
+        elements.startBtn.disabled = true;
+        elements.stopBtn.disabled = false;
+
+        // Reset metrics
+        chunkCount = 0;
+        byteCount = 0;
+        contentBuffer = '';
+        elements.contentDisplay.textContent = '';
+        elements.filesList.innerHTML = '';
+        updateMetrics();
+
+        // Create conversation
+        if (!conversationId) {
+          await createTestConversation();
+        }
+
+        log(`🚀 Starting orchestration test...`, 'info');
+        log(`📝 Prompt: "${prompt.substring(0, 100)}${prompt.length > 100 ? '...' : ''}"`, 'info');
+
+        abortController = new AbortController();
+
+        const messages = [
+          { role: 'user', content: prompt }
+        ];
+
+        log(`📡 Calling stream endpoint: POST /api/conversations/${conversationId}/stream`, 'info');
+
+        const response = await fetch(`${API_BASE}/api/conversations/${conversationId}/stream`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: 'deepseek-r1:8b',
+            messages: messages
+          }),
+          signal: abortController.signal
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        log(`✅ Stream connection established`, 'success');
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+
+          if (done) {
+            log('✅ Stream completed', 'success');
+            break;
+          }
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            if (!line.trim()) continue;
+
+            try {
+              const chunk = JSON.parse(line);
+              chunkCount++;
+
+              // Handle orchestration chunks
+              if (chunk.orchestration) {
+                logOrchestration(chunk.orchestration);
+
+                const phase = chunk.orchestration.phase || 'unknown';
+                const elapsed = chunk.orchestration.elapsed || 0;
+                updateStatus(phase, elapsed);
+
+                if (chunk.orchestration.details?.filesFound) {
+                  log(`📁 Files found: ${chunk.orchestration.details.filesFound.join(', ')}`, 'success');
+                  updateFilesList(chunk.orchestration.details.filesFound, chunk.orchestration.details.filesRejected);
+                }
+
+                if (chunk.orchestration.validation === 'failed') {
+                  log(`⚠️ Validation failed: ${chunk.orchestration.reason || 'Unknown reason'}`, 'error');
+                }
+
+                if (chunk.orchestration.phase === 'timeout') {
+                  log(`⏱️ Orchestration timeout`, 'error');
+                }
+              }
+
+              // Handle message content
+              if (chunk.message?.content) {
+                const content = chunk.message.content;
+                contentBuffer += content;
+                byteCount += content.length;
+                elements.contentDisplay.textContent = contentBuffer;
+                elements.contentDisplay.scrollTop = elements.contentDisplay.scrollHeight;
+              }
+
+              // Handle completion
+              if (chunk.done) {
+                log('🏁 Generation complete', 'success');
+                log(`📊 Total chunks: ${chunkCount}, Total bytes: ${byteCount}`, 'info');
+                updateStatus('complete', chunk.orchestration?.elapsed);
+              }
+
+              updateMetrics();
+
+            } catch (err) {
+              log(`⚠️ Failed to parse chunk: ${err.message}`, 'warning');
+            }
+          }
+        }
+
+      } catch (error) {
+        if (error.name === 'AbortError') {
+          log('⏹️ Orchestration stopped by user', 'warning');
+        } else {
+          log(`❌ Error: ${error.message}`, 'error');
+          console.error('Orchestration error:', error);
+        }
+      } finally {
+        elements.startBtn.disabled = false;
+        elements.stopBtn.disabled = true;
+        abortController = null;
+      }
+    }
+
+    function updateFilesList(filesFound, filesRejected) {
+      elements.filesList.innerHTML = '';
+
+      if (filesFound && filesFound.length > 0) {
+        filesFound.forEach(file => {
+          const li = document.createElement('li');
+          li.textContent = `✅ ${file}`;
+          elements.filesList.appendChild(li);
+        });
+      }
+
+      if (filesRejected && filesRejected.length > 0) {
+        filesRejected.forEach(file => {
+          const li = document.createElement('li');
+          li.className = 'rejected';
+          li.textContent = `❌ ${file.path}: ${file.reason}`;
+          elements.filesList.appendChild(li);
+        });
+      }
+    }
+
+    function stopOrchestration() {
+      if (abortController) {
+        log('⏹️ Stopping orchestration...', 'warning');
+        abortController.abort();
+      }
+    }
+
+    function clearLogs() {
+      elements.eventLog.innerHTML = '';
+      elements.orchestrationLog.innerHTML = '';
+      elements.contentDisplay.textContent = '';
+      elements.filesList.innerHTML = '';
+      chunkCount = 0;
+      byteCount = 0;
+      contentBuffer = '';
+      updateMetrics();
+      updateStatus('idle', 0);
+      log('🧹 Logs cleared', 'info');
+    }
+
+    // Event listeners
+    elements.startBtn.addEventListener('click', startOrchestration);
+    elements.stopBtn.addEventListener('click', stopOrchestration);
+    elements.clearBtn.addEventListener('click', clearLogs);
+
+    // Initial log
+    log('✨ Orchestration test page loaded', 'success');
+    log(`📡 API endpoint: ${API_BASE}`, 'info');
+  </script>
+</body>
+</html>

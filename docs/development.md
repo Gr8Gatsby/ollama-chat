@@ -916,6 +916,7 @@ class I18n {
 *Network Configuration*:
 - All services on same Docker network: `ollama-chat-network`
 - Backend can reach Ollama at `http://ollama:11434`
+- Optional: use local machine Ollama by setting `OLLAMA_HOST=http://host.docker.internal:11434`
 - Frontend served by nginx, makes WebSocket connection to `ws://localhost:8080`
 
 *Container Configuration*:
@@ -1246,6 +1247,7 @@ ollama:
 - MUST extract token counts from Ollama response
 - MUST use `/api/tags` endpoint to list available models
 - MUST validate model availability before sending chat request
+- SHOULD allow checking local machine Ollama by pointing `OLLAMA_HOST` at `http://host.docker.internal:11434`
 
 *Connection Management*:
 - MUST implement ping/pong heartbeat (every 30 seconds)
@@ -2148,6 +2150,7 @@ describe('ollama-button', () => {
 3. **Conversation Management**: Create, list, switch, delete conversations
 4. **Settings**: Update preferences
 5. **System**: Health, status, errors
+6. **Orchestration Status**: Persistent, user-visible progress and validation
 
 **Complete Message Type Specifications**:
 
@@ -2160,7 +2163,7 @@ describe('ollama-button', () => {
   "data": {
     "conversationId": "uuid",
     "message": "string",
-    "model": "string",
+    "model": "string", // user-selected generation model (required)
     "images": ["base64..."]  // optional
   }
 }
@@ -2173,7 +2176,12 @@ describe('ollama-button', () => {
     "conversationId": "uuid",
     "chunk": "string",
     "done": false,
-    "tokens": { "prompt": 0, "completion": 5, "total": 5 }
+    "tokens": { "prompt": 0, "completion": 5, "total": 5 },
+    "model": "string", // echo user-selected generation model
+    "orchestration": {
+      "phase": "generate", // optional: plan | validate | generate | repair
+      "attempt": 1
+    }
   }
 }
 
@@ -2184,7 +2192,13 @@ describe('ollama-button', () => {
     "messageId": "uuid",
     "conversationId": "uuid",
     "content": "string",
-    "tokens": { "prompt": 45, "completion": 120, "total": 165 }
+    "tokens": { "prompt": 45, "completion": 120, "total": 165 },
+    "model": "string", // echo user-selected generation model
+    "orchestration": {
+      "attempts": 1,
+      "validation": "passed", // passed | failed
+      "helpers": ["string"] // optional helper model names used for plan/validate
+    }
   }
 }
 
@@ -2206,6 +2220,12 @@ describe('ollama-button', () => {
   }
 }
 ```
+
+*Orchestration Persistence Requirements*:
+- Orchestrator updates MUST be persisted as normal conversation messages.
+- UI-only orchestrator messages are NOT allowed.
+- Orchestrator messages MUST be included in downloads/exports of conversation history.
+- Orchestrator messages SHOULD use a distinct metadata flag (e.g., `kind: "orchestrator"`) for rendering.
 
 *2. Model Management*:
 

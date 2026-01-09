@@ -4,6 +4,7 @@ import "./components/features/ollama-conversation-item.js";
 import "./components/features/ollama-message-list.js";
 import "./components/features/ollama-user-message.js";
 import "./components/features/ollama-ai-response.js";
+import "./components/features/ollama-orchestrator-status.js";
 import "./components/features/ollama-chat-input.js";
 import "./components/features/ollama-project-view.js";
 import "./components/features/ollama-live-preview.js";
@@ -14,7 +15,6 @@ import "./components/base/ollama-confirm-dialog.js";
 import "./components/base/ollama-icon.js";
 import "./components/base/ollama-text.js";
 import "./components/base/ollama-toggle-switch.js";
-import { listModels, streamChat } from "./utils/ollama-client.js";
 import {
   BACKEND_BASE,
   fetchConversations,
@@ -24,11 +24,14 @@ import {
   fetchProjectFiles,
   fetchProjectFile,
   createMessage,
+  updateMessage,
   upsertProjectFile,
   updateProject,
   deleteConversation,
   updateConversationTitle,
   logTokenUsage,
+  streamConversationChat,
+  fetchModels,
 } from "./utils/backend-client.js";
 
 const DEFAULT_MODELS = [{ label: "llama3", value: "llama3" }];
@@ -57,6 +60,17 @@ class OllamaFrontendApp extends HTMLElement {
     this.pendingDeleteConversation = null;
     this.renderQueued = false;
     this.abortController = null;
+    this.deferProjectContent = false;
+    this.deferredProjectToken = 0;
+    this.projectRecoveryInFlight = new Set();
+    this.stopRequested = false;
+    this.stopRequestedReason = "";
+    this.orchestrationStatusByConversation = {};
+    this.orchestrationRuntimeByConversation = {};
+    this.missingFixInFlight = new Set();
+    this.orchestrationBufferByConversation = {};
+    this.orchestrationUpdateTimers = {}; // Debounce timers for DB writes
+    this.orchestratorComponentsByRunId = {}; // Map runId -> DOM element
   }
 
   connectedCallback() {
@@ -67,19 +81,29 @@ class OllamaFrontendApp extends HTMLElement {
 
   async loadModels() {
     try {
-      const models = await listModels();
-      if (models.length) {
-        this.models = models.map((model) => ({
-          label: model.label,
-          value: model.value,
-          supportsVision: model.supportsVision,
-        }));
-        this.activeModel = this.models[0].value;
-        this.scheduleRender();
-      }
+      const models = await fetchModels();
+      this.models = models.map((model) => ({
+        label: model.name,
+        value: model.name,
+        supportsVision: this.isVisionModelName(model.name),
+      }));
+      this.activeModel = this.models[0]?.value || "";
+      this.scheduleRender();
     } catch (error) {
       console.warn("[frontend] Failed to load models:", error);
     }
+  }
+
+  isVisionModelName(modelName = "") {
+    const visionKeywords = [
+      "vision",
+      "llava",
+      "bakllava",
+      "llama3.2-vision",
+      "minicpm-v",
+    ];
+    const nameLower = modelName.toLowerCase();
+    return visionKeywords.some((keyword) => nameLower.includes(keyword));
   }
 
   getActiveModelInfo() {
@@ -97,9 +121,324 @@ class OllamaFrontendApp extends HTMLElement {
     if (this.renderQueued) return;
     this.renderQueued = true;
     requestAnimationFrame(() => {
+      console.time("[perf] render");
       this.renderQueued = false;
       this.render();
+      console.timeEnd("[perf] render");
     });
+  }
+
+  async flushOrchestrationUpdate(conversationId) {
+    // Immediately flush any pending database write
+    const timerId = this.orchestrationUpdateTimers[conversationId];
+    if (timerId) {
+      clearTimeout(timerId);
+      delete this.orchestrationUpdateTimers[conversationId];
+
+      // Find the last assistant message to flush its orchestration metadata
+      const messages = this.messagesByConversation[conversationId] || [];
+      let lastAssistant = null;
+      for (let i = messages.length - 1; i >= 0; i--) {
+        if (
+          messages[i].role === "assistant" &&
+          messages[i].kind !== "orchestrator"
+        ) {
+          lastAssistant = messages[i];
+          break;
+        }
+      }
+
+      if (lastAssistant) {
+        try {
+          await updateMessage(conversationId, lastAssistant.id, {
+            content: lastAssistant.content,
+            metadata: lastAssistant.metadata,
+          });
+        } catch (error) {
+          console.warn(
+            "[frontend] Failed to flush assistant message with orchestration metadata:",
+            error,
+          );
+        }
+      }
+    }
+  }
+
+  async updateOrchestrationStatus(conversationId, orchestration) {
+    if (!conversationId) return;
+
+    console.log("[updateOrchestrationStatus] Incoming orchestration:", {
+      phase: orchestration.phase,
+      details: orchestration.details,
+      validation: orchestration.validation,
+    });
+
+    // Find the last assistant message (the one being generated now)
+    const messages = this.messagesByConversation[conversationId] || [];
+    let lastAssistant = null;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (
+        messages[i].role === "assistant" &&
+        messages[i].kind !== "orchestrator"
+      ) {
+        lastAssistant = messages[i];
+        break;
+      }
+    }
+
+    let runtime = this.orchestrationRuntimeByConversation[conversationId] || {};
+
+    // Start a new orchestration run - completely reset runtime
+    if (orchestration.phase === "start") {
+      const previousRunId = runtime.runId;
+      console.log(
+        "[updateOrchestrationStatus] Starting NEW orchestration run",
+        {
+          previousRunId,
+          newRunId: Date.now(),
+          timestamp: orchestration.timestamp,
+        },
+      );
+      const newRunId = Date.now();
+      runtime = {
+        runId: newRunId,
+        status: { files: [], log: [] },
+        lastKey: "",
+        lastOutput: "",
+        buffer: "",
+        suppressAssistant: false,
+        componentId: `orchestrator-${newRunId}`, // Unique component ID
+      };
+      this.orchestrationRuntimeByConversation[conversationId] = runtime;
+
+      // Create and track the new orchestrator component for this run
+      console.log(
+        `[orchestrator] Created new run ${newRunId} for conversation ${conversationId}`,
+      );
+    } else if (!runtime.runId) {
+      // Fallback for first time initialization
+      runtime = {
+        runId: Date.now(),
+        status: { files: [], log: [] },
+        messageId: "",
+        lastKey: "",
+        lastOutput: "",
+        buffer: runtime.buffer || "",
+        suppressAssistant: runtime.suppressAssistant || false,
+      };
+    }
+    const status = runtime.status || { files: [], log: [] };
+    if (!status.startedAt) {
+      status.startedAt = Date.now();
+    }
+    const files = new Set(status.files || []);
+    const details = orchestration.details || {};
+    if (details.path) files.add(details.path);
+    if (Array.isArray(details.filesFound)) {
+      details.filesFound.forEach((file) => files.add(file));
+    }
+    status.files = Array.from(files).slice(0, 6);
+
+    console.log("[updateOrchestrationStatus] Status after file accumulation:", {
+      phase: orchestration.phase,
+      statusFiles: status.files,
+      statusSteps: status.steps,
+      detailsFilesFound: details.filesFound,
+    });
+
+    let line = "";
+    const phaseLabel = (() => {
+      const phase = orchestration.phase || "";
+      if (phase === "start") return "Start";
+      if (phase === "analyzing") return "Analyzing";
+      if (phase === "loading_files") return "Loading files";
+      if (phase === "plan") return "Plan";
+      if (phase === "generate" || phase === "retry") return "Generate";
+      if (phase === "generating") return "Generate"; // New progressive phase
+      if (phase === "heartbeat") return ""; // Heartbeat doesn't change label
+      if (phase === "validate") return "Validate";
+      if (phase === "complete") return "Complete";
+      if (phase === "file_complete") return "Generate";
+      if (phase) return phase;
+      return "";
+    })();
+    if (orchestration.phase === "file_complete" && details.path) {
+      line = `File: ${details.path}`;
+    } else if (
+      orchestration.phase === "loading_files" &&
+      details.filesRequested
+    ) {
+      line = `${phaseLabel}: ${details.filesRequested.join(", ")}`;
+    } else if (orchestration.validation) {
+      const status = orchestration.validation;
+      line = phaseLabel ? `${phaseLabel}: ${status}` : `Status: ${status}`;
+    } else if (phaseLabel) {
+      line = `${phaseLabel}${
+        orchestration.attempt ? ` (${orchestration.attempt}x)` : ""
+      }`;
+    }
+    if (orchestration.reason) {
+      line = `${line} — ${orchestration.reason}`;
+    }
+    if (line) {
+      status.log = [...(status.log || []), line].slice(-3);
+    }
+    // Do not surface raw output samples in chat status.
+    if (Array.isArray(details.steps)) {
+      status.steps = details.steps;
+    }
+
+    // Use elapsed time from backend if available, otherwise calculate locally
+    const elapsedSeconds =
+      orchestration.elapsed !== undefined
+        ? orchestration.elapsed
+        : Math.max(0, Math.round((Date.now() - status.startedAt) / 1000));
+
+    // Track heartbeat for liveliness indicator
+    if (orchestration.phase === "heartbeat") {
+      runtime.lastHeartbeat = Date.now();
+    }
+
+    // Store minimal content - the component will render from metadata
+    // Keep elapsed time in content for backwards compatibility with old messages
+    const content = `Orchestrator: ${orchestration.phase || "working"} • ${elapsedSeconds}s`;
+
+    console.log(
+      "[frontend] Orchestrator status update:",
+      orchestration.phase,
+      "elapsed:",
+      elapsedSeconds,
+      "runId:",
+      runtime.runId,
+    );
+
+    // Build event key for change detection
+    const stepKey = Array.isArray(status.steps)
+      ? status.steps.map((step) => `${step.id}:${step.done ? 1 : 0}`).join(",")
+      : "";
+    const eventKeyParts = [
+      line,
+      status.files.join(","),
+      stepKey,
+      orchestration.validation || "",
+      orchestration.phase || "",
+      details.stepId || "",
+      details.path || "",
+      elapsedSeconds, // Include elapsed to trigger updates
+    ];
+    const eventKey = eventKeyParts.filter(Boolean).join("|");
+    const metadata = {
+      orchestrationStatus: status,
+      orchestration: {
+        phase: orchestration.phase || "working",
+        elapsed: elapsedSeconds,
+        bytesGenerated: orchestration.bytesGenerated,
+        filesRequested: details.filesRequested,
+        details: details.output
+          ? { output: details.output }
+          : runtime.lastOutput
+            ? { output: runtime.lastOutput }
+            : {},
+      },
+    };
+    if (details.output) {
+      runtime.lastOutput = details.output;
+    }
+    runtime.status = status;
+
+    // If no assistant message exists yet, buffer the update
+    if (!lastAssistant) {
+      console.log(
+        "[updateOrchestrationStatus] No assistant message yet, buffering update",
+      );
+      runtime.pendingUpdate = { status, metadata };
+      this.orchestrationRuntimeByConversation[conversationId] = runtime;
+      return;
+    }
+
+    console.log("[updateOrchestrationStatus] Attaching to assistant message:", {
+      messageId: lastAssistant.id,
+      phase: orchestration.phase,
+      runId: runtime.runId,
+    });
+
+    // Attach orchestration metadata to the assistant message
+    lastAssistant.metadata = {
+      ...lastAssistant.metadata,
+      orchestrationStatus: status,
+      orchestration: {
+        phase: orchestration.phase || "working",
+        elapsed: elapsedSeconds,
+        bytesGenerated: orchestration.bytesGenerated,
+        filesRequested: details.filesRequested,
+        details: details.output
+          ? { output: details.output }
+          : runtime.lastOutput
+            ? { output: runtime.lastOutput }
+            : {},
+      },
+    };
+
+    runtime.status = status;
+    runtime.lastKey = eventKey;
+    this.orchestrationRuntimeByConversation[conversationId] = runtime;
+
+    // Determine if we should update the UI
+    const isHeartbeat = orchestration.phase === "heartbeat";
+    const isGenerating = orchestration.phase === "generating";
+    const hasElapsedChange = orchestration.elapsed !== runtime.lastElapsed;
+    const shouldUpdate =
+      eventKey !== runtime.lastKey ||
+      isHeartbeat ||
+      isGenerating ||
+      hasElapsedChange;
+
+    if (shouldUpdate) {
+      console.log("[frontend] Updating assistant message metadata:", {
+        messageId: lastAssistant.id,
+        isHeartbeat,
+        hasElapsedChange,
+        phase: orchestration.phase,
+      });
+
+      // For heartbeat and time updates, force immediate render to show incrementing timer
+      if (isHeartbeat || hasElapsedChange) {
+        this.renderQueued = false; // Clear any pending render
+        this.render(); // Render immediately
+      } else {
+        this.scheduleRender(); // Schedule for other updates
+      }
+
+      // Track last elapsed time to detect changes
+      runtime.lastElapsed = orchestration.elapsed;
+
+      // Only update eventKey for significant changes (not heartbeat/elapsed)
+      if (eventKey !== runtime.lastKey && !isHeartbeat) {
+        runtime.lastKey = eventKey;
+      }
+
+      runtime.status = status;
+      this.orchestrationRuntimeByConversation[conversationId] = runtime;
+
+      // No need to update DB during streaming - we'll save everything at the end
+    }
+    this.orchestrationRuntimeByConversation[conversationId] = runtime;
+  }
+
+  scheduleDeferredProjectContent() {
+    const token = ++this.deferredProjectToken;
+    const run = () => {
+      if (token !== this.deferredProjectToken) return;
+      this.deferProjectContent = false;
+      this.scheduleRender();
+    };
+
+    if (typeof window !== "undefined" && "requestIdleCallback" in window) {
+      window.requestIdleCallback(run);
+      return;
+    }
+
+    setTimeout(run, 0);
   }
 
   get activeMessages() {
@@ -117,15 +456,26 @@ class OllamaFrontendApp extends HTMLElement {
   }
 
   setMode(nextMode) {
+    console.time(`[perf] setMode to ${nextMode}`);
     this.mode = nextMode;
+    if (nextMode === "project") {
+      this.deferProjectContent = true;
+      this.scheduleDeferredProjectContent();
+    } else {
+      this.deferProjectContent = false;
+    }
     // Immediately schedule a render for instant UI feedback
     this.scheduleRender();
+    console.timeLog(`[perf] setMode to ${nextMode}`, "render scheduled");
 
     // Load project data in background if switching to project mode
     if (nextMode === "project" && this.activeConversationId) {
-      this.loadProject(this.activeConversationId).then(() =>
-        this.scheduleRender(),
-      );
+      this.loadProject(this.activeConversationId).then(() => {
+        console.timeEnd(`[perf] setMode to ${nextMode}`);
+        this.scheduleRender();
+      });
+    } else {
+      console.timeEnd(`[perf] setMode to ${nextMode}`);
     }
   }
 
@@ -196,47 +546,164 @@ class OllamaFrontendApp extends HTMLElement {
     if (!conversationId) return;
     try {
       const messages = await fetchMessages(conversationId);
-      this.messagesByConversation[conversationId] = messages.map((msg) => ({
-        id: msg.id,
-        role: msg.role,
-        content: msg.content,
-        model: msg.model || this.activeModel,
-        timestamp: msg.createdAt || Date.now(),
-        tokens: msg.tokens && Number(msg.tokens) > 0 ? String(msg.tokens) : "",
-        images: msg.images ? JSON.parse(msg.images) : undefined,
-      }));
+      this.messagesByConversation[conversationId] = messages.map((msg) => {
+        if (msg.metadata?.orchestrationStatus || msg.metadata?.orchestration) {
+          console.log("[loadMessages] Found orchestration metadata:", {
+            id: msg.id,
+            orchestrationStatus: msg.metadata?.orchestrationStatus,
+            orchestration: msg.metadata?.orchestration,
+          });
+        }
+        return {
+          id: msg.id,
+          role: msg.role,
+          content: msg.content,
+          kind: msg.metadata?.kind || "",
+          model: msg.model || this.activeModel,
+          timestamp: msg.createdAt || Date.now(),
+          tokens:
+            msg.tokens && Number(msg.tokens) > 0 ? String(msg.tokens) : "",
+          images: msg.images ? JSON.parse(msg.images) : undefined,
+          metadata: msg.metadata || null,
+        };
+      });
+      await this.ensureProjectFromMessages(conversationId);
     } catch (error) {
       console.warn("[frontend] Failed to load messages:", error);
     }
   }
 
-  async loadProject(conversationId) {
-    if (!conversationId) return;
+  async ensureProjectFromMessages(conversationId, force = false) {
+    if (!conversationId || this.projectRecoveryInFlight.has(conversationId)) {
+      return;
+    }
+    const project = this.projectByConversation[conversationId];
+    if (!project?.id) return;
+
+    this.projectRecoveryInFlight.add(conversationId);
     try {
+      const files = await fetchProjectFiles(project.id);
+      const hasUserFiles = files.some(
+        (file) => file.path && !file.path.startsWith("project."),
+      );
+      if (hasUserFiles && !force) return;
+
+      const messages = this.messagesByConversation[conversationId] || [];
+      const fileCandidates = [];
+      for (const message of messages) {
+        if (message.role !== "assistant") continue;
+        const rawOutput =
+          message.metadata?.rawOutput ||
+          message.metadata?.orchestration?.details?.output ||
+          message.content ||
+          "";
+        const extracted = this.extractFilesFromContent(rawOutput);
+        fileCandidates.push(...extracted);
+      }
+
+      for (const file of fileCandidates) {
+        await upsertProjectFile(project.id, file);
+      }
+
+      await this.ensureProjectScaffold(project.id, project);
+      await this.reconcileProjectManifest(project.id);
+      this.projectFileContentByProject[project.id] = {};
+      await this.loadProject(conversationId, { skipRecovery: true });
+    } catch (error) {
+      console.warn("[frontend] Failed to recover project files:", error);
+    } finally {
+      this.projectRecoveryInFlight.delete(conversationId);
+    }
+  }
+
+  async loadProject(conversationId, { skipRecovery = false } = {}) {
+    if (!conversationId) return;
+    console.time(`[perf] loadProject`);
+    try {
+      console.time(`[perf] fetchConversationProject`);
       const project = await fetchConversationProject(conversationId);
+      console.timeEnd(`[perf] fetchConversationProject`);
       if (!project) return;
       this.projectByConversation[conversationId] = project;
+
+      console.time(`[perf] fetchProjectFiles`);
       const files = await fetchProjectFiles(project.id);
+      console.timeEnd(`[perf] fetchProjectFiles`);
       this.projectFilesByProject[project.id] = files;
-      await this.ensureProjectManifest(project, files);
+      if (!skipRecovery) {
+        const hasUserFiles = files.some(
+          (file) => file.path && !file.path.startsWith("project."),
+        );
+        if (!hasUserFiles) {
+          await this.ensureProjectFromMessages(conversationId, true);
+          console.timeEnd(`[perf] loadProject`);
+          return;
+        }
+      }
+
+      const initialFiles = this.projectFilesByProject[project.id] || files;
+      this.projectTreeByProject[project.id] = this.buildFileTree(
+        project.name,
+        initialFiles,
+      );
+      const state = this.getProjectState(conversationId);
+      if (!state.selectedPath && initialFiles.length) {
+        state.selectedPath = initialFiles[0].path;
+      }
+      if (!state.expanded.length && project.name) {
+        state.expanded = [project.name];
+      }
+
+      // Render immediately with cached data for fast UI feedback
+      this.scheduleRender();
+
+      const backgroundTasks = [];
+
+      backgroundTasks.push(
+        (async () => {
+          console.time(`[perf] ensureProjectManifest`);
+          await this.ensureProjectManifest(project, files);
+          console.timeEnd(`[perf] ensureProjectManifest`);
+        })(),
+      );
+
+      if (state.selectedPath) {
+        backgroundTasks.push(
+          (async () => {
+            console.time(`[perf] ensureProjectFileContent`);
+            await this.ensureProjectFileContent(project.id, state.selectedPath);
+            console.timeEnd(`[perf] ensureProjectFileContent`);
+          })(),
+        );
+      }
+
+      backgroundTasks.push(
+        (async () => {
+          console.time(`[perf] updateProjectLint`);
+          await this.updateProjectLint(project.id);
+          console.timeEnd(`[perf] updateProjectLint`);
+        })(),
+      );
+
+      await Promise.all(backgroundTasks);
+
       const refreshedFiles = this.projectFilesByProject[project.id] || files;
       this.projectTreeByProject[project.id] = this.buildFileTree(
         project.name,
         refreshedFiles,
       );
-      const state = this.getProjectState(conversationId);
-      if (!state.selectedPath && refreshedFiles.length) {
-        state.selectedPath = refreshedFiles[0].path;
+      const refreshedState = this.getProjectState(conversationId);
+      if (!refreshedState.selectedPath && refreshedFiles.length) {
+        refreshedState.selectedPath = refreshedFiles[0].path;
       }
-      if (!state.expanded.length && project.name) {
-        state.expanded = [project.name];
+      if (!refreshedState.expanded.length && project.name) {
+        refreshedState.expanded = [project.name];
       }
-      if (state.selectedPath) {
-        await this.ensureProjectFileContent(project.id, state.selectedPath);
-      }
-      await this.updateProjectLint(project.id);
+      this.scheduleRender();
     } catch (error) {
       console.warn("[frontend] Failed to load project:", error);
+    } finally {
+      console.timeEnd(`[perf] loadProject`);
     }
   }
 
@@ -341,6 +808,11 @@ Your application should follow this structure:
    - Self-contained with Shadow DOM
    - Accept data via attributes/properties
    - Emit custom events for parent communication
+
+## Output Rules
+
+- Only emit files using the **File: path/to/file.ext** format. Code fences without file paths are ignored.
+- Do NOT use React, Tailwind, Vite, or other build tooling. This project is no-build and runs directly in the browser.
 
 ## File Response Format
 
@@ -719,7 +1191,8 @@ None yet - project just created
     // File manifest
     context += `### File Manifest\n${JSON.stringify(manifest, null, 2)}\n\n`;
 
-    context += `**Important**: Generate files using structured format (File: path followed by code block).\n`;
+    context += `**Important**: Generate files using structured format (File: path followed by code block). Code fences without file paths are ignored.\n`;
+    context += `Use only the no-build web stack (HTML/CSS/ES modules). Do not output React, Tailwind, or Vite files.\n`;
     if (hasExistingFiles) {
       context += `Only include files you are creating or modifying.`;
     }
@@ -730,6 +1203,11 @@ None yet - project just created
   buildPreviewUrl(projectId) {
     if (!projectId) return "";
     return `${BACKEND_BASE}/api/projects/${projectId}/preview/?t=${Date.now()}`;
+  }
+
+  getSharePreviewUrl(projectId) {
+    if (!projectId) return "";
+    return `${BACKEND_BASE}/api/projects/${projectId}/preview/`;
   }
 
   getProjectById(projectId) {
@@ -979,6 +1457,7 @@ Instructions:
     let inFence = false;
     let fenceLang = "text";
     let buffer = [];
+    let jsonIndex = 0;
 
     const filePattern =
       /^(?:\s*(?:File|Path)\s*[:\-]\s*|\/\/\s*File:\s*|\/\*\s*File:\s*|<!--\s*File:\s*)(.+?)(?:\s*-->|\s*\*\/)?$/i;
@@ -1020,13 +1499,10 @@ Instructions:
             // Don't auto-assign markdown files
             resolvedPath = null;
           }
-          if (
-            fenceLang === "js" ||
-            fenceLang === "javascript" ||
-            fenceLang === "ts" ||
-            fenceLang === "typescript"
-          ) {
-            resolvedPath = "src/app.js";
+          if (fenceLang === "json") {
+            resolvedPath =
+              jsonIndex === 0 ? "data.json" : `data-${jsonIndex}.json`;
+            jsonIndex += 1;
           }
         }
 
@@ -1092,22 +1568,161 @@ Instructions:
     return files;
   }
 
+  async ensureProjectScaffold(projectId, project) {
+    if (!projectId) return;
+    const files = await fetchProjectFiles(projectId);
+    const fileSet = new Set(files.map((file) => file.path));
+    const hasIndex = fileSet.has("index.html");
+    const hasStyles = fileSet.has("styles.css");
+    const hasApp = fileSet.has("src/app.js");
+    const projectName = project?.name || "Project";
+
+    if (!hasIndex) {
+      await upsertProjectFile(projectId, {
+        path: "index.html",
+        content: `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>${projectName}</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="app">
+      <header class="app__header">
+        <h1>${projectName}</h1>
+        <p class="app__subtitle">Drafted from chat output.</p>
+      </header>
+      <section class="app__content">
+        <div class="card">
+          <h2>Data</h2>
+          <pre id="data-output">Loading...</pre>
+        </div>
+      </section>
+    </main>
+    <script type="module" src="src/app.js"></script>
+  </body>
+</html>
+`,
+        language: "html",
+      });
+    }
+
+    if (!hasStyles) {
+      await upsertProjectFile(projectId, {
+        path: "styles.css",
+        content: `:root {
+  color-scheme: light;
+  font-family: system-ui, sans-serif;
+  color: #111827;
+  background: #f8fafc;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 32px;
+}
+
+.app {
+  max-width: 960px;
+  margin: 0 auto;
+  display: grid;
+  gap: 24px;
+}
+
+.app__header h1 {
+  margin: 0 0 8px;
+  font-size: 28px;
+}
+
+.app__subtitle {
+  margin: 0;
+  color: #6b7280;
+}
+
+.card {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 16px;
+}
+
+#data-output {
+  white-space: pre-wrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+`,
+        language: "css",
+      });
+    }
+
+    if (!hasApp) {
+      await upsertProjectFile(projectId, {
+        path: "src/app.js",
+        content: `const output = document.querySelector("#data-output");
+
+async function loadData() {
+  if (!output) return;
+  try {
+    const response = await fetch("/data.json");
+    if (!response.ok) {
+      output.textContent = "No data.json found yet.";
+      return;
+    }
+    const data = await response.json();
+    output.textContent = JSON.stringify(data, null, 2);
+  } catch (error) {
+    output.textContent = "Failed to load data.json.";
+  }
+}
+
+loadData();
+`,
+        language: "javascript",
+      });
+    }
+  }
+
   async persistFilesFromResponse(conversationId, content) {
     if (!conversationId || !content) return;
-    const project = this.projectByConversation[conversationId];
-    if (!project) {
+    if (!this.projectByConversation[conversationId]) {
       await this.loadProject(conversationId);
     }
-    const projectId = this.projectByConversation[conversationId]?.id;
+    const project = this.projectByConversation[conversationId];
+    const projectId = project?.id;
     if (!projectId) return;
     const files = this.extractFilesFromContent(content);
     if (!files.length) return;
     for (const file of files) {
       await upsertProjectFile(projectId, file);
     }
+    await this.ensureProjectScaffold(projectId, project);
     await this.reconcileProjectManifest(projectId);
     this.projectFileContentByProject[projectId] = {};
     await this.loadProject(conversationId);
+
+    const lintErrors = this.projectLintByProject[projectId] || [];
+    const missingReferences = lintErrors.filter((item) =>
+      String(item.message || "").includes("does not exist"),
+    );
+    if (
+      missingReferences.length &&
+      !this.missingFixInFlight.has(conversationId)
+    ) {
+      this.missingFixInFlight.add(conversationId);
+      const entryPath = this.getProjectEntryPath(projectId);
+      const prompt = this.buildMissingReferencesPrompt(
+        entryPath,
+        missingReferences,
+      );
+      await this.handleSend(prompt, [], { internal: true });
+      this.missingFixInFlight.delete(conversationId);
+    }
   }
 
   updateConversationMetrics(conversationId, tokenDelta = 0) {
@@ -1205,7 +1820,10 @@ Instructions:
   updateLastAssistantMessage(conversationId, updater) {
     const messages = this.messagesByConversation[conversationId] || [];
     for (let i = messages.length - 1; i >= 0; i -= 1) {
-      if (messages[i].role === "assistant") {
+      if (
+        messages[i].role === "assistant" &&
+        messages[i].kind !== "orchestrator"
+      ) {
         updater(messages[i]);
         break;
       }
@@ -1261,8 +1879,10 @@ Instructions:
     return { before, code, after, language };
   }
 
-  async handleSend(message, attachedFiles = []) {
+  async handleSend(message, attachedFiles = [], options = {}) {
     if (!message?.trim()) return;
+    this.stopRequested = false;
+    this.stopRequestedReason = "";
     let conversationId = this.activeConversationId;
     if (!conversationId) {
       conversationId = await this.createConversationRecord({
@@ -1271,6 +1891,19 @@ Instructions:
       if (conversationId) {
         this.activeConversationId = conversationId;
       }
+    }
+    if (!this.activeModel) {
+      const assistantMessage = {
+        id: `assistant-${Date.now()}`,
+        role: "assistant",
+        content:
+          "No models are available for the backend. Pull a model in Ollama or configure the backend to point at a host with models.",
+        timestamp: Date.now(),
+        model: "",
+      };
+      this.appendMessage(conversationId, assistantMessage);
+      this.scheduleRender();
+      return;
     }
 
     // Process images: convert to base64
@@ -1286,46 +1919,49 @@ Instructions:
       }
     }
 
-    const userMessage = {
-      id: `user-${Date.now()}`,
-      role: "user",
-      content: message,
-      timestamp: Date.now(),
-      model: this.activeModel,
-      images: images.length > 0 ? images : undefined,
-      attachedFiles: attachedFiles.map((f) => ({
-        name: f.name,
-        size: f.size,
-        type: f.type,
-      })),
-    };
+    if (!options.internal) {
+      const userMessage = {
+        id: `user-${Date.now()}`,
+        role: "user",
+        content: message,
+        timestamp: Date.now(),
+        model: this.activeModel,
+        images: images.length > 0 ? images : undefined,
+        attachedFiles: attachedFiles.map((f) => ({
+          name: f.name,
+          size: f.size,
+          type: f.type,
+        })),
+      };
 
-    this.appendMessage(conversationId, userMessage);
-    this.updateConversationMetrics(conversationId, 0);
-    if (conversationId) {
-      try {
-        const messageId = await createMessage(conversationId, {
-          role: "user",
-          content: message,
-          model: this.activeModel,
-          images: images.length > 0 ? JSON.stringify(images) : undefined,
-          attachedFiles:
-            attachedFiles.length > 0
-              ? JSON.stringify(
-                  attachedFiles.map((f) => ({
-                    name: f.name,
-                    size: f.size,
-                    type: f.type,
-                  })),
-                )
-              : undefined,
-        });
-        userMessage.id = messageId;
-      } catch (error) {
-        console.warn("[frontend] Failed to persist user message:", error);
+      this.appendMessage(conversationId, userMessage);
+      this.updateConversationMetrics(conversationId, 0);
+      if (conversationId) {
+        try {
+          const messageId = await createMessage(conversationId, {
+            role: "user",
+            content: message,
+            model: this.activeModel,
+            images: images.length > 0 ? JSON.stringify(images) : undefined,
+            attachedFiles:
+              attachedFiles.length > 0
+                ? JSON.stringify(
+                    attachedFiles.map((f) => ({
+                      name: f.name,
+                      size: f.size,
+                      type: f.type,
+                    })),
+                  )
+                : undefined,
+          });
+          userMessage.id = messageId;
+        } catch (error) {
+          console.warn("[frontend] Failed to persist user message:", error);
+        }
       }
     }
 
+    // Create assistant message with temp ID (will save to DB after streaming completes)
     const assistantMessage = {
       id: `assistant-${Date.now()}`,
       role: "assistant",
@@ -1336,6 +1972,21 @@ Instructions:
     };
 
     this.appendMessage(conversationId, assistantMessage);
+
+    // If there's a buffered orchestration update waiting, apply it now
+    const runtime = this.orchestrationRuntimeByConversation[conversationId];
+    if (runtime?.pendingUpdate) {
+      console.log(
+        "[frontend] Applying buffered orchestration update to new assistant message",
+      );
+      assistantMessage.metadata = {
+        ...assistantMessage.metadata,
+        ...runtime.pendingUpdate.metadata,
+      };
+      delete runtime.pendingUpdate;
+      this.orchestrationRuntimeByConversation[conversationId] = runtime;
+    }
+
     this.isStreaming = true;
     this.scheduleRender();
 
@@ -1389,37 +2040,208 @@ Instructions:
           }
           return message;
         }),
+        ...(options.internal
+          ? [
+              {
+                role: "user",
+                content: message,
+              },
+            ]
+          : []),
       ],
     };
 
+    let lastChunk = "";
+    let repeatChunkCount = 0;
+    let repetitionStopTriggered = false;
+    let orchestrationMeta = null;
+    let suppressAssistantOutput = false;
+
     try {
-      for await (const chunk of streamChat(payload, {
-        signal: this.abortController.signal,
-      })) {
+      for await (const chunk of streamConversationChat(
+        conversationId,
+        payload,
+        { signal: this.abortController.signal },
+      )) {
+        if (chunk?.orchestration) {
+          suppressAssistantOutput = true;
+          const runtime =
+            this.orchestrationRuntimeByConversation[conversationId] || {};
+          runtime.suppressAssistant = true;
+          runtime.buffer = runtime.buffer || "";
+          this.orchestrationRuntimeByConversation[conversationId] = runtime;
+        }
         const content = chunk?.message?.content || "";
         if (content) {
-          this.updateLastAssistantMessage(conversationId, (msg) => {
-            msg.content += content;
+          if (suppressAssistantOutput) {
+            const runtime =
+              this.orchestrationRuntimeByConversation[conversationId] || {};
+            runtime.buffer = `${runtime.buffer || ""}${content}`;
+            this.orchestrationRuntimeByConversation[conversationId] = runtime;
+          } else {
+            this.updateLastAssistantMessage(conversationId, (msg) => {
+              msg.content += content;
+            });
+            this.detectStreamingFile(
+              this.messagesByConversation[conversationId],
+            );
+          }
+
+          if (!repetitionStopTriggered) {
+            if (content === lastChunk && content) {
+              repeatChunkCount += 1;
+            } else {
+              repeatChunkCount = 0;
+              lastChunk = content;
+            }
+
+            const latest =
+              this.messagesByConversation[conversationId]?.slice(-1)[0];
+            const fullContent = latest?.content || "";
+            if (
+              repeatChunkCount >= 5 ||
+              (fullContent && this.hasRepeatingTail(fullContent))
+            ) {
+              repetitionStopTriggered = true;
+              this.stopStreaming("repetition");
+            }
+          }
+        }
+        if (chunk?.orchestration) {
+          console.log("[frontend] Orchestration chunk:", {
+            phase: chunk.orchestration.phase,
+            elapsed: chunk.orchestration.elapsed,
+            timestamp: Date.now(),
           });
-          this.detectStreamingFile(this.messagesByConversation[conversationId]);
+          await this.updateOrchestrationStatus(
+            conversationId,
+            chunk.orchestration,
+          );
+          // Note: updateOrchestrationStatus already handles rendering internally
         }
         if (chunk?.done) {
           const totalTokens =
             (chunk.prompt_eval_count || 0) + (chunk.eval_count || 0);
+          const runtime =
+            this.orchestrationRuntimeByConversation[conversationId] || {};
+          const bufferedContent = runtime.buffer || "";
+          const finalContent = suppressAssistantOutput ? bufferedContent : null;
+          let finalMessageContent = "";
           this.updateLastAssistantMessage(conversationId, (msg) => {
             msg.streaming = false;
             msg.tokens = totalTokens ? String(totalTokens) : msg.tokens;
+            if (chunk?.orchestration) {
+              // Preserve existing orchestration metadata (accumulated status)
+              msg.metadata = {
+                ...(msg.metadata || {}),
+                orchestration: {
+                  ...(msg.metadata?.orchestration || {}),
+                  ...chunk.orchestration,
+                },
+              };
+            }
+            if (suppressAssistantOutput) {
+              const files = this.extractFilesFromContent(finalContent);
+              const filePaths = files.map((file) => file.path);
+              if (filePaths.length) {
+                finalMessageContent = `Files updated:\n${filePaths
+                  .map((path) => `- ${path}`)
+                  .join("\n")}\n\nOpen the Project tab to view file contents.`;
+              } else {
+                finalMessageContent = finalContent;
+              }
+              msg.content = finalMessageContent;
+              msg.fileBlocks = filePaths.length ? files : [];
+              // Preserve orchestrationStatus when adding rawOutput
+              msg.metadata = {
+                ...(msg.metadata || {}),
+                rawOutput: finalContent,
+                orchestration: {
+                  ...(msg.metadata?.orchestration || {}),
+                  ...chunk?.orchestration,
+                },
+              };
+            }
           });
           this.isStreaming = false;
-          const assistantContent = this.activeMessages
-            .filter((msg) => msg.role === "assistant")
-            .slice(-1)[0]?.content;
+          orchestrationMeta = chunk?.orchestration || null;
+
+          // Flush any pending orchestration status updates
+          await this.flushOrchestrationUpdate(conversationId);
+
+          // Save generated files to project if orchestration completed successfully
+          console.log("[frontend] Checking if files should be saved:", {
+            suppressAssistantOutput,
+            hasFinalContent: !!finalContent,
+            hasOrchestration: !!chunk?.orchestration,
+            hasOutput: !!chunk?.orchestration?.details?.output,
+            orchestrationPhase: chunk?.orchestration?.phase,
+            validation: chunk?.orchestration?.validation,
+          });
+
+          if (
+            suppressAssistantOutput &&
+            finalContent &&
+            chunk?.orchestration?.details?.output
+          ) {
+            console.log(
+              "[frontend] Orchestration completed, saving files to project",
+            );
+            await this.persistFilesFromResponse(
+              conversationId,
+              chunk.orchestration.details.output,
+            );
+            console.log("[frontend] Files saved successfully");
+          } else {
+            console.warn("[frontend] File save condition not met");
+          }
+
+          const assistantContent = suppressAssistantOutput
+            ? finalContent
+            : this.activeMessages
+                .filter((msg) => msg.role === "assistant")
+                .slice(-1)[0]?.content;
           if (conversationId && assistantContent) {
             try {
+              const messageContent = suppressAssistantOutput
+                ? finalMessageContent || assistantContent
+                : assistantContent;
+              // Get the assistant message from memory (has orchestrationStatus from updateOrchestrationStatus calls)
+              const messages =
+                this.messagesByConversation[conversationId] || [];
+              const lastAssistant = messages
+                .filter((msg) => msg.role === "assistant")
+                .slice(-1)[0];
+
+              // Merge ALL metadata: use in-memory orchestrationStatus + final orchestration from stream
+              const finalMetadata = {
+                ...(lastAssistant?.metadata || {}),
+                orchestration: {
+                  ...(lastAssistant?.metadata?.orchestration || {}),
+                  ...(orchestrationMeta || {}),
+                },
+                ...(suppressAssistantOutput
+                  ? { rawOutput: assistantContent }
+                  : {}),
+              };
+
+              console.log(
+                "[handleSend] Saving assistant message with metadata:",
+                {
+                  hasOrchestrationStatus:
+                    !!lastAssistant?.metadata?.orchestrationStatus,
+                  orchestrationStatus:
+                    lastAssistant?.metadata?.orchestrationStatus,
+                  finalMetadata: finalMetadata,
+                },
+              );
+
+              // Create the message in DB with final content and ALL metadata (including orchestrationStatus)
               const messageId = await createMessage(conversationId, {
                 role: "assistant",
-                content: assistantContent,
+                content: messageContent,
                 model: this.activeModel,
+                metadata: finalMetadata,
               });
               await logTokenUsage({
                 messageId,
@@ -1445,6 +2267,19 @@ Instructions:
         }
       }
     } catch (error) {
+      if (this.stopRequested && this.abortController?.signal?.aborted) {
+        this.updateLastAssistantMessage(conversationId, (msg) => {
+          msg.streaming = false;
+          if (this.stopRequestedReason === "repetition") {
+            msg.content = `${msg.content || ""}\n\n[Stopped due to repetition]`;
+          }
+        });
+        this.isStreaming = false;
+        this.stopRequested = false;
+        this.stopRequestedReason = "";
+        this.scheduleRender();
+        return;
+      }
       console.error("[frontend] Chat stream failed:", error);
       this.updateLastAssistantMessage(conversationId, (msg) => {
         msg.streaming = false;
@@ -1455,16 +2290,55 @@ Instructions:
     }
   }
 
+  stopStreaming(reason = "") {
+    if (!this.isStreaming) return;
+    this.stopRequested = true;
+    this.stopRequestedReason = reason;
+    if (this.abortController) {
+      this.abortController.abort();
+    }
+  }
+
+  hasRepeatingTail(content) {
+    const minLen = 20;
+    const maxLen = 200;
+    const tail = content.slice(-maxLen * 3);
+    for (let len = minLen; len <= maxLen; len += 10) {
+      const repeatLen = len * 3;
+      if (tail.length < repeatLen) continue;
+      const segment = tail.slice(-len);
+      if (tail.endsWith(segment.repeat(3))) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   attachListeners() {
     const chatInput = this.querySelector("ollama-chat-input");
     chatInput?.addEventListener("send", (event) => {
       this.handleSend(event.detail?.value, event.detail?.attachedFiles);
+    });
+    chatInput?.addEventListener("stop", () => {
+      this.stopStreaming();
     });
     chatInput?.addEventListener("model-change", (event) => {
       const value = event.detail?.value;
       if (value) {
         this.activeModel = value;
         // Don't re-render - the chat-input component handles its own update
+      }
+    });
+
+    // Handle regenerate from user messages
+    this.addEventListener("regenerate-message", (event) => {
+      // Find the message that triggered regenerate
+      const messageElement = event.target.closest("ollama-user-message");
+      if (!messageElement) return;
+
+      const content = messageElement.getAttribute("content");
+      if (content) {
+        this.handleSend(content, []);
       }
     });
 
@@ -1685,16 +2559,42 @@ Instructions:
       this.scheduleRender();
     });
 
-    const previewShot = this.querySelector("[data-preview-shot]");
-    previewShot?.addEventListener("click", async () => {
-      const preview = this.querySelector("ollama-live-preview");
-      if (!preview?.captureScreenshot) return;
-      const dataUrl = await preview.captureScreenshot();
-      if (!dataUrl) return;
-      const link = document.createElement("a");
-      link.href = dataUrl;
-      link.download = "preview.png";
-      link.click();
+    const previewCopy = this.querySelector("[data-preview-copy]");
+    previewCopy?.addEventListener("click", async () => {
+      const project = this.projectByConversation[this.activeConversationId];
+      if (!project?.id) return;
+      const url = this.getSharePreviewUrl(project.id);
+      try {
+        await navigator.clipboard.writeText(url);
+      } catch (error) {
+        console.warn("[frontend] Failed to copy preview URL:", error);
+      }
+    });
+
+    this.querySelectorAll("[data-orchestration-download]").forEach((button) => {
+      button.onclick = () => {
+        const messageId = button.getAttribute("data-message-id");
+        const conversationId = this.activeConversationId;
+        if (!messageId || !conversationId) return;
+        const messages = this.messagesByConversation[conversationId] || [];
+        const message = messages.find((msg) => msg.id === messageId);
+        const output = message?.metadata?.orchestration?.details?.output;
+        if (!output) return;
+        const blob = new Blob([output], { type: "text/plain" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `orchestration-output-${messageId}.txt`;
+        link.click();
+        URL.revokeObjectURL(url);
+      };
+    });
+
+    const recoverButton = this.querySelector("[data-recover-files]");
+    recoverButton?.addEventListener("click", async () => {
+      const conversationId = this.activeConversationId;
+      if (!conversationId) return;
+      await this.ensureProjectFromMessages(conversationId, true);
     });
 
     const fixMissingButton = this.querySelector("[data-fix-missing]");
@@ -1725,6 +2625,15 @@ Instructions:
               ${msg.tokens ? `tokens="${msg.tokens}"` : ""}
             ></ollama-user-message>
           `;
+        }
+        // Orchestrator messages are now rendered inside ai-response components
+        // This code path should not be hit anymore
+        if (msg.kind === "orchestrator") {
+          console.warn(
+            "[render] Unexpected standalone orchestrator message:",
+            msg.id,
+          );
+          return ""; // Don't render standalone orchestrator messages
         }
         if (msg.filePreview) {
           const parts = this.extractFilePreviewParts(
@@ -1759,6 +2668,46 @@ Instructions:
             </ollama-ai-response>
           `;
         }
+        // Check if this message has orchestration metadata
+        const hasOrchestration =
+          msg.metadata?.orchestrationStatus || msg.metadata?.orchestration;
+        const orchestratorHtml = hasOrchestration
+          ? (() => {
+              const status = msg.metadata?.orchestrationStatus || {};
+              const orchestration = msg.metadata?.orchestration || {};
+              const phase = orchestration.phase || "working";
+              const files = (status.files || []).join(",");
+              const steps = status.steps ? JSON.stringify(status.steps) : "";
+              const elapsed = orchestration.elapsed || 0;
+              const bytesGenerated = orchestration.bytesGenerated || "";
+              const filesRequested = orchestration.filesRequested || [];
+
+              console.log(
+                "[render] Orchestrator metadata for message:",
+                msg.id,
+                {
+                  phase,
+                  statusFiles: status.files,
+                  statusSteps: status.steps,
+                  files,
+                  steps,
+                },
+              );
+
+              return `
+            <ollama-orchestrator-status
+              slot="details"
+              phase="${this.escapeAttribute(phase)}"
+              elapsed="${elapsed}"
+              ${files ? `files="${this.escapeAttribute(files)}"` : ""}
+              ${steps ? `steps="${this.escapeAttribute(steps)}"` : ""}
+              ${bytesGenerated ? `bytes-generated="${bytesGenerated}"` : ""}
+              ${filesRequested.length ? `files-requested="${this.escapeAttribute(filesRequested.join(","))}"` : ""}
+            ></ollama-orchestrator-status>
+          `;
+            })()
+          : "";
+
         return `
           <ollama-ai-response
             content="${this.escapeAttribute(msg.content)}"
@@ -1766,7 +2715,9 @@ Instructions:
             model="${msg.model || ""}"
             ${msg.tokens ? `tokens="${msg.tokens}"` : ""}
             ${msg.streaming ? "streaming" : ""}
-          ></ollama-ai-response>
+          >
+            ${orchestratorHtml}
+          </ollama-ai-response>
         `;
       })
       .join("");
@@ -1830,6 +2781,7 @@ Instructions:
       (this.projectLintByProject[activeProject.id] || []).length,
     );
     const previewUrl = this.previewUrl || "";
+    const deferFileContent = showProject && this.deferProjectContent;
 
     this.innerHTML = `
       <ollama-chat-container ${
@@ -1842,7 +2794,7 @@ Instructions:
         >
           <div style="padding: 16px; display: flex; flex-direction: column; gap: 16px;">
             <ollama-text variant="title" size="md" weight="semibold">
-              Sidebar
+              Conversations
             </ollama-text>
             <ollama-conversation-list>
               ${this.conversations
@@ -1923,11 +2875,11 @@ Instructions:
                         </ollama-button>
                         <ollama-button
                           variant="icon"
-                          aria-label="Screenshot preview"
-                          data-preview-shot
+                          aria-label="Copy preview link"
+                          data-preview-copy
                         >
-                          <ollama-icon name="camera"></ollama-icon>
-                          <ollama-tooltip>Screenshot</ollama-tooltip>
+                          <ollama-icon name="link"></ollama-icon>
+                          <ollama-tooltip>Copy preview link</ollama-tooltip>
                         </ollama-button>
                       `
                       : `
@@ -1960,6 +2912,14 @@ Instructions:
                         }
                       `
                   }
+                  <ollama-button
+                    variant="icon"
+                    aria-label="Recover files from chat"
+                    data-recover-files
+                  >
+                    <ollama-icon name="search"></ollama-icon>
+                    <ollama-tooltip>Recover files</ollama-tooltip>
+                  </ollama-button>
                 </ollama-action-bar>
               </div>
             `
@@ -2027,13 +2987,18 @@ Instructions:
                              selectedFile?.size || selectedMeta?.size || "",
                            )}"
                            file-lines="${this.escapeAttribute(
-                             selectedFile?.content
-                               ? selectedFile.content.split("\n").length
-                               : "",
+                             deferFileContent
+                               ? ""
+                               : selectedFile?.content
+                                 ? selectedFile.content.split("\n").length
+                                 : "",
                            )}"
                            file-content="${this.escapeAttribute(
-                             selectedFile?.content || "",
+                             deferFileContent
+                               ? ""
+                               : selectedFile?.content || "",
                            )}"
+                           ${deferFileContent ? "loading" : ""}
                            lint-errors='${this.escapeAttribute(
                              JSON.stringify(lintErrors),
                            )}'

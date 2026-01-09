@@ -66,13 +66,9 @@ class OllamaAiResponse extends BaseComponent {
 
         .meta {
           display: inline-flex;
-          align-items: baseline;
-          gap: var(--spacing-xs);
+          align-items: center;
+          gap: var(--spacing-sm);
           color: var(--color-text-secondary);
-        }
-
-        .meta > * {
-          align-self: baseline;
         }
 
         .token-badge {
@@ -82,15 +78,17 @@ class OllamaAiResponse extends BaseComponent {
         }
 
         .meta ::slotted(ollama-message-actions) {
-          align-self: baseline;
-          position: relative;
-          top: 4px;
+          align-self: center;
         }
 
         .streaming {
           display: inline-flex;
           align-items: center;
           gap: var(--spacing-xs);
+        }
+
+        .details ::slotted(.orchestration-details) {
+          display: block;
         }
       </style>
       <div class="response" part="response">
@@ -101,7 +99,18 @@ class OllamaAiResponse extends BaseComponent {
             )}"></ollama-markdown-renderer>
           </slot>
         </div>
+        <div class="details" part="details">
+          <slot name="details"></slot>
+        </div>
         <div class="meta" part="meta">
+          ${
+            streaming
+              ? `<span class="streaming">
+                   <ollama-spinner size="sm"></ollama-spinner>
+                   <ollama-text variant="caption" color="muted">Generating</ollama-text>
+                 </span>`
+              : ""
+          }
           ${model ? `<ollama-badge size="sm">${model}</ollama-badge>` : ""}
           ${
             relativeTime
@@ -116,14 +125,6 @@ class OllamaAiResponse extends BaseComponent {
               ? `<span class="token-badge">
                    <ollama-badge size="sm" variant="default">${tokens}</ollama-badge>
                    <ollama-tooltip position="top-right">Tokens used</ollama-tooltip>
-                 </span>`
-              : ""
-          }
-          ${
-            streaming
-              ? `<span class="streaming">
-                   <ollama-spinner size="sm"></ollama-spinner>
-                   <ollama-text variant="caption" color="muted">Generating</ollama-text>
                  </span>`
               : ""
           }

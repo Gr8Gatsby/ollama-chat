@@ -140,6 +140,10 @@ export class OllamaChatInput extends BaseComponent {
     });
 
     this.sendButton?.addEventListener("click", () => this.handleSend("button"));
+    const stopButton = this.shadowRoot?.querySelector(".stop-button");
+    stopButton?.addEventListener("click", () => {
+      this.emit("stop");
+    });
 
     const menuItems = this.shadowRoot?.querySelectorAll(".menu-item");
     menuItems?.forEach((item) => {
@@ -279,6 +283,10 @@ export class OllamaChatInput extends BaseComponent {
 
   isSendDisabled() {
     return this.isInputDisabled() || !this.value?.trim();
+  }
+
+  isBusy() {
+    return this.getBooleanAttribute("busy");
   }
 
   updateSendState() {
@@ -587,7 +595,8 @@ export class OllamaChatInput extends BaseComponent {
           display: none;
         }
 
-        .send-button {
+        .send-button,
+        .stop-button {
           display: inline-flex;
           align-items: center;
           justify-content: center;
@@ -602,7 +611,8 @@ export class OllamaChatInput extends BaseComponent {
           position: relative;
         }
 
-        .send-button::before {
+        .send-button::before,
+        .stop-button::before {
           content: '';
           position: absolute;
           inset: 0;
@@ -612,15 +622,18 @@ export class OllamaChatInput extends BaseComponent {
           transition: opacity 0.15s ease;
         }
 
-        .send-button:hover:not(:disabled)::before {
+        .send-button:hover:not(:disabled)::before,
+        .stop-button:hover:not(:disabled)::before {
           opacity: 1;
         }
 
-        :host([data-theme="dark"]) .send-button::before {
+        :host([data-theme="dark"]) .send-button::before,
+        :host([data-theme="dark"]) .stop-button::before {
           background: rgba(255, 255, 255, 0.12);
         }
 
-        .send-button:disabled {
+        .send-button:disabled,
+        .stop-button:disabled {
           opacity: 0.35;
           cursor: not-allowed;
         }
@@ -694,16 +707,30 @@ export class OllamaChatInput extends BaseComponent {
             </div>
             <div class="status-stack">
               <div class="status-line"></div>
-              <button
-                type="button"
-                class="send-button"
-                ${this.isSendDisabled() ? "disabled" : ""}
-                aria-label="Send message"
-              >
-                <slot name="send-icon">
-                  <ollama-icon name="send-horizontal" size="sm" style="stroke-width: 2.5;"></ollama-icon>
-                </slot>
-              </button>
+              ${
+                busy
+                  ? `
+                  <button
+                    type="button"
+                    class="stop-button"
+                    aria-label="Stop generating"
+                  >
+                    <ollama-icon name="square" size="sm" style="stroke-width: 2.5;"></ollama-icon>
+                  </button>
+                `
+                  : `
+                  <button
+                    type="button"
+                    class="send-button"
+                    ${this.isSendDisabled() ? "disabled" : ""}
+                    aria-label="Send message"
+                  >
+                    <slot name="send-icon">
+                      <ollama-icon name="send-horizontal" size="sm" style="stroke-width: 2.5;"></ollama-icon>
+                    </slot>
+                  </button>
+                `
+              }
             </div>
           </div>
         </div>
